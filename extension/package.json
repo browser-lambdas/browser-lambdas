@@ -6,11 +6,13 @@
   "scripts": {
     "check": "node scripts/check.js",
     "build": "bash ./compile.sh",
+    "package:chrome-store": "bash ./package-chrome-store.sh",
     "pretest:unit": "node scripts/runtimeTemplate.js",
     "test:unit": "node --test tests/*.test.js",
     "test:e2e": "node e2e/run-e2e.js"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0"
+    "@playwright/test": "^1.63.0",
+    "esbuild": "^0.28.2"
   }
 }
