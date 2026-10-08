@@ -1,0 +1,17 @@
+{
+  "name": "baah",
+  "version": "0.1.0",
+  "description": "Push local browser-lambdas to your extension with one command.",
+  "bin": {
+    "baah": "baah.js"
+  },
+  "type": "module",
+  "files": ["baah.js", "init.js", "templates/"],
+  "scripts": {
+    "dev": "node baah.js"
+  },
+  "dependencies": {
+    "toml": "^5.0.0",
+    "ws": "^8.21.0"
+  }
+}
