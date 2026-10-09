@@ -209,13 +209,23 @@ test("loads trigger patterns in scalar, inline and block forms", (t) => {
   }
 });
 
-test("loads commented release trigger fixtures", () => {
-  const fixtureDir = path.resolve("../tests/manual_release/section-16/triggers");
-  for (const name of ["rt-16-17-block.yaml", "rt-16-17-inline.yaml", "rt-16-17.yaml", "rt-16-20.yaml"]) {
-    const trigger = loadTriggerFile(path.join(fixtureDir, name));
-    assert.equal(trigger.name, name.replace(/\.yaml$/, ""));
-    assert.ok(trigger.patterns.length > 0);
-    assert.ok(trigger.commands.length > 0);
+test("loads commented trigger files in scalar, inline and block forms", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baah-commented-triggers-"));
+  try {
+    const forms = [
+      'patterns: "https://example.com/*" # page match\ncommands: hello # command',
+      'patterns: ["https://example.com/*"] # page match\ncommands: ["hello"] # commands',
+      'patterns: # page matches\n  - "https://example.com/*" # page match\ncommands: # commands\n  - hello # command',
+    ];
+    for (const content of forms) {
+      const file = path.join(dir, "commented.yaml");
+      fs.writeFileSync(file, `# Trigger configuration\n${content}\n`);
+      assert.deepEqual(loadTriggerFile(file), {
+        name: "commented", patterns: ["https://example.com/*"], commands: ["hello"],
+      });
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

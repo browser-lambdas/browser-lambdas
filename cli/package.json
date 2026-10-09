@@ -1,14 +1,24 @@
 {
   "name": "baah",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Push local browser-lambdas to your extension with one command.",
   "bin": {
     "baah": "baah.js"
   },
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/browser-lambdas/browser-lambdas.git",
+    "directory": "cli"
+  },
+  "engines": { "node": ">=22" },
+  "publishConfig": { "access": "public" },
   "files": ["baah.js", "init.js", "templates/"],
   "scripts": {
-    "dev": "node baah.js"
+    "dev": "node baah.js",
+    "test": "node --test baah.test.js",
+    "test:package": "node scripts/test-package.js"
   },
   "dependencies": {
     "toml": "^5.0.0",
