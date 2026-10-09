@@ -8,9 +8,6 @@ jobs:
   cli:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      matrix:
-        node: [22, 24]
     defaults:
       run:
         working-directory: cli
@@ -18,7 +15,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '24'
           package-manager-cache: false
       - run: npm ci
       - run: npm test

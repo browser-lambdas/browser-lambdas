@@ -1,7 +1,7 @@
 # baah
 
 Push local JavaScript, CSS, and triggers to the Browser Lambdas extension.
-Requires Node.js 22 or newer and the [Browser Lambdas extension](https://github.com/browser-lambdas/browser-lambdas/tree/main/extension).
+Requires Node.js 24 or newer and the [Browser Lambdas extension](https://github.com/browser-lambdas/browser-lambdas/tree/main/extension).
 
 ```sh
 npm install --global baah

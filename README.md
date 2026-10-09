@@ -2,4 +2,4 @@
 
 Mono repo for extension, docs and baah cli tool.
 
-See [baah usage](cli/README.md) and [npm release setup](cli/RELEASING.md).
+See [baah usage](cli/README.md).

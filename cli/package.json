@@ -12,12 +12,12 @@
     "url": "git+https://github.com/browser-lambdas/browser-lambdas.git",
     "directory": "cli"
   },
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=24" },
   "publishConfig": { "access": "public" },
   "files": ["baah.js", "init.js", "templates/"],
   "scripts": {
     "dev": "node baah.js",
-    "test": "node --test baah.test.js",
+    "test": "node --test baah.test.js scripts/*.test.js",
     "test:package": "node scripts/test-package.js"
   },
   "dependencies": {
