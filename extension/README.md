@@ -38,11 +38,6 @@ Requires the `zip` command. The script compiles a fresh, minified build and crea
 from the built manifest. It works from any working directory and replaces the ZIP
 for the same version without retaining files from previous builds.
 
-Upload this ZIP to the Chrome Web Store developer dashboard. It contains the build
-contents with `manifest.json` at the root, as required by the
-[Chrome Web Store packaging guide](https://developer.chrome.com/docs/webstore/prepare).
-Store listing details and submission for review are completed separately in the dashboard.
-
 ## Playwright end-to-end tests
 
 The extension Playwright harness lives in `extension/e2e` and launches the compiled
