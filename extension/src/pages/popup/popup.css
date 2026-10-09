@@ -1,0 +1,4 @@
+body { margin: 0; font-family: var(--font-ui); background:#160e16; color:#f7f5f8; }
+.card { width: 42ch; padding: 12px 16px; border-radius: 12px; }
+.row { display:block; margin: 8px 0; padding: 0; color: #f7f5f8; text-decoration:none; background:none; border:none; font:inherit; text-align:left; cursor:pointer; }
+.small { opacity: .9; }

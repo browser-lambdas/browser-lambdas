@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Browser Lambdas Documentation</title>
+		<link rel="icon" type="image/png" href="./assets/favicon-green.png" />
+		<link rel="stylesheet" href="styles.css" />
+		<script src="llms-data.js" defer></script>
+		<script src="highlight.js" defer></script>
+		<script src="script.js" defer></script>
+	</head>
+	<body>
+		<div class="docs-shell">
+			<div class="docs-layout">
+				<nav class="docs-nav" aria-label="Documentation">
+					<a class="docs-logo" href="#category-intro" data-category-home aria-label="Browser Lambdas home">
+						<img src="assets/logo-clean.png" alt="" width="92" height="92" />
+					</a>
+					<div class="docs-categories" role="group" aria-label="Main categories">
+						<a href="#category-intro" data-category-link="intro">intro</a>
+						<a href="#category-hello-world" data-category-link="quick-start">hello world</a>
+						<a href="#category-ctx" data-category-link="ctx">ctx</a>
+						<a href="#category-baah" data-category-link="baah">baah</a>
+						<a href="#category-llms" data-category-link="llms">llms.txt</a>
+					</div>
+					<hr class="docs-nav-divider" />
+					<ul id="docs-toc"></ul>
+				</nav>
+
+				<main class="docs-content">
+					<article class="docs-prose" id="docs-content">
+						<div class="doc-group" data-category="intro" id="category-intro">
+
+							<section class="doc-section">
+								<h1 id="introduction">Hack your browsing</h1>
+
+								<p>
+									With Browser Lambdas, your browsing experience is hackable in the best way possible: write
+									lambda functions and execute them on the web to give yourself new tools, capabilities,
+									and shortcuts.
+								</p>
+
+								<p>
+									It started as just functions but now also includes a mod’able shell, persistant key-value
+									storage, secrets and URL based trigger automations.
+								</p>
+
+								<p>
+									Use it to work faster, reduce mental load, avoid clicks or just have fun. Track your stuff
+									in git and sync with the extension via the CLI tool baah.
+								</p>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="how-it-works">How It Works</h2>
+
+								<p>
+									The intended flow is simple:
+								</p>
+								<ol>
+									<li>Write a lambda function on your machine and track it with git.</li>
+									<li>Sync it to the extension via <code>baah push</code>.</li>
+									<li>Go to a page.</li>
+									<li>Execute the function.</li>
+								</ol>
+
+								<p>
+									The extension keeps a copy of your function and injects it together with a small runtime
+									into a JavaScript context associated with the target page. The runtime exposes APIs for
+									key-value storage, secrets, and more through the async <code>ctx</code> object. These APIs
+									establish secure channels between the extension background worker and the runtime.
+								</p>
+
+								<p>
+									Your function runs instantly and disappears when it’s done. It can manipulate the page DOM,
+									open tabs, act on inputs, and more. Basically you are Neo now.
+								</p>
+
+								<p><a href="#category-hello-world" data-category-link="quick-start">Continue to Hello world →</a></p>
+							</section>
+
+						</div>
+
+						<div class="doc-group" data-category="quick-start" id="category-hello-world">
+							<span id="category-quick-start"></span>
+							<section class="doc-section">
+								<span id="quick-start"></span>
+								<h1 id="hello-world">Hello world</h1>
+								<p>Quickstart introduction guide to the <code>baah</code> cli tool and running your first lambda function.</p>
+
+								<ol class="quick-start-steps">
+									<li>Install the <strong>Browser Lambdas</strong> extension from the Chrome Web Store.</li>
+									<li>Install <code>baah</code> with:
+										<pre><code data-language="shell">npm install -g baah</code></pre>
+									</li>
+									<li>Open the extension workspace in your browser and create a connection token at <span class="path"><kbd>Settings</kbd><span>→</span><kbd>Connection token</kbd><span>→</span><kbd>Create new</kbd></span>.</li>
+									<li>Run <code>baah set chrome</code> and provide the token.</li>
+									<pre><code data-language="shell">$ baah set chrome
+Token (hidden):
+✔ Added connection 'chrome'.</code></pre>
+									<li>Scaffold the hello-world example with:
+										<pre><code data-language="shell">baah init hello-world</code></pre>
+									</li>
+									<pre><code data-language="shell">✔ Created baah.toml
+✔ Created functions/hello-world.js
+✔ Project initialized at hello-world
+
+Next:
+  cd 'hello-world'
+  baah push chrome</code></pre>
+									<li>Sync it with the extension:
+										<pre><code data-language="shell">baah push chrome</code></pre>
+									</li>
+									<pre><code data-language="shell">▶ Loading functions...
+✔ Function loading complete
+▶ Connecting to client...
+✔ Client authenticated on ws://127.0.0.1:4455
+✔ Push complete</code></pre>
+									<li>Open the workspace and approve the push.</li>
+									<li>Go to a page.</li>
+									<li>Open the shell with <code>Cmd+K</code> (or <code>Ctrl+K</code>) and run <code>hello-world</code>.</li>
+								</ol>
+
+							</section>
+							<section class="doc-section quick-start-followups">
+									<h2 id="whats-next">Whats next?</h2>
+									<p>Looks like you are ready to roam on your own.</p>
+									<p>Browser Lambdas is a powerful tool and it ships with some awesome capabilities not covered in this tutorial. It’s recommended to keep exploring on your own:</p>
+									<ol>
+										<li><a href="#category-baah" data-category-link="baah">baah CLI tool</a></li>
+										<li>the <a href="#category-ctx" data-category-link="ctx"><code>ctx</code> API</a> (KV storage, secrets, tabs and more)</li>
+									</ol>
+									<p>(or just throw the llms.txt at an agent and ask for shit):</p>
+									<ol start="3">
+										<li><a href="#category-llms" data-category-link="llms">llms.txt</a></li>
+									</ol>
+							</section>
+						</div>
+
+						<div class="doc-group" data-category="llms" id="category-llms">
+							<section class="doc-section" data-skip-export="true">
+								<h1 id="llms-txt">llms.txt</h1>
+								<div class="llms-viewer">
+									<button class="llms-copy-button" id="copy-llms-content" type="button">copy</button>
+									<pre><code id="llms-content">Loading llms.txt…</code></pre>
+									<p class="llms-status" id="llms-status" role="status" aria-live="polite"></p>
+								</div>
+							</section>
+						</div>
+
+						<div class="doc-group" data-category="ctx" id="category-ctx">
+
+							<section class="doc-section">
+								<h2 id="overview">Overview</h2>
+
+								<span id="runtime-api"></span>
+								<p>
+									The functions you write are just plain JavaScript functions. To spice things up you can use the <code>ctx</code> API to:
+								</p>
+								<ol>
+									<li>Use key-value storage (KV) to read/write persisted values between function calls</li>
+									<li>Read-only access secrets at runtime to make API requests</li>
+									<li>Parse rich arguments to your functions (positional, flags etc)</li>
+									<li>Run other lambda functions</li>
+									<li>Manipulate tabs</li>
+								</ol>
+								<p>The surface of the <code>ctx</code> object looks like this:</p>
+
+								<div class="table-wrap">
+									<table>
+										<thead>
+											<tr><th>Feature</th><th>API Examples</th><th>Purpose</th></tr>
+										</thead>
+										<tbody>
+											<tr><td>Arguments</td><td><code>ctx.args.all()</code></td><td>Read command‑line flags passed to a lambda</td></tr>
+											<tr><td>Storage</td><td><code>ctx.kv.get()</code>, <code>ctx.kv.set()</code></td><td>Persist values between lambdas</td></tr>
+											<tr><td>Secrets</td><td><code>ctx.secrets.get()</code></td><td>Access configured secrets</td></tr>
+											<tr><td>Run</td><td><code>ctx.run("foo bar")</code>, <code>ctx.tabs.this().run()</code></td><td>Execute another lambda on the current page</td></tr>
+											<tr><td>Tabs</td><td><code>ctx.tabs.new()</code>, <code>ctx.tabs.all()</code></td><td>Open, list and control browser tabs</td></tr>
+										</tbody>
+									</table>
+								</div>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="args">Args</h2>
+								<h3 id="ctxargsall"><code>ctx.args.all()</code></h3>
+								<p>
+									Returns an object with all command‑line arguments.
+								</p>
+								<h4 id="positional-arguments">Positional arguments</h4>
+								<pre><code data-language="shell">my-lambda cats dogs</code></pre>
+								<pre><code data-language="javascript">const { 0: first, 1: second } = ctx.args.all();
+console.log(first, second);</code></pre>
+								<h4 id="long-flags">Long flags</h4>
+								<pre><code data-language="shell">my-lambda --title "Hello" --count=5 --dry-run</code></pre>
+								<pre><code data-language="javascript">const { title, count, dryRun } = ctx.args.all();
+console.log(title, count, dryRun);</code></pre>
+								<h4 id="short-flags-and-aliases">Short flags and aliases</h4>
+								<pre><code data-language="shell">my-lambda -u alice -p hunter2</code></pre>
+								<pre><code data-language="javascript">const { username, password } = ctx.args.all({ u: 'username', p: 'password' });
+console.log(username); // "alice"
+console.log(password); // "hunter2"</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="storage">kv</h2>
+								<p>
+									Key-value map stored persistently in browser extension storage. Values are stored as JSON, so you can save plain strings or complex objects without stringifying.
+								</p>
+								<h3 id="ctxkvgetkey"><code>ctx.kv.get(key)</code></h3>
+								<p>
+									Fetches a value when the item allows the current page and execution world.
+								</p>
+								<pre><code data-language="javascript">const value = await ctx.kv.get("my-key");
+console.log(value);</code></pre>
+								<p>Missing or denied keys return <code>null</code> with a shell warning. A stored null also returns null, without a warning.</p>
+								<h3 id="ctxkvsetkey-value"><code>ctx.kv.set(key, value)</code></h3>
+								<p>Stores a JSON-compatible value and returns <code>true</code> when allowed, or <code>false</code> with a warning when blocked.</p>
+								<pre><code data-language="javascript">await ctx.kv.set("my-key", "hello");</code></pre>
+								<p>You can store objects too:</p>
+								<pre><code data-language="javascript">const snippet = { url: location.href, text: window.getSelection().toString() };
+await ctx.kv.set("last-snippet", snippet);
+
+// later on another page
+const saved = await ctx.kv.get("last-snippet");
+console.log(saved.text);</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="secrets">Secrets</h2>
+								<h3 id="ctxsecretsgetkey"><code>ctx.secrets.get(key)</code></h3>
+								<p>
+									Read-only access to a secret added via the extension workspace.
+								</p>
+								<pre><code data-language="javascript">const token = await ctx.secrets.get("API_KEY");
+const res = await fetch("https://api.example.com", {
+  headers: { Authorization: `Bearer ${token}` }
+});
+console.log(await res.json());</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="run">Run</h2>
+								<h3 id="ctxruncmd"><code>ctx.run(cmd)</code></h3>
+								<p>Runs another lambda on the current page. Provide the full command exactly as you would type it in the shell.</p>
+								<pre><code data-language="javascript">await ctx.run("other-lambda arg1 arg2");</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="tabs">Tabs</h2>
+								<h3 id="ctxtabsnewurl"><code>ctx.tabs.new(url?)</code></h3>
+								<p>Opens a new tab with the specified URL.</p>
+								<pre><code data-language="javascript">await ctx.tabs.new("https://example.com");</code></pre>
+								<h3 id="ctxtabsnewrunlambda-args"><code>ctx.tabs.new().run(lambda, args?)</code></h3>
+								<p>Opens a new tab and runs a lambda inside it.</p>
+								<pre><code data-language="javascript">await ctx.tabs.new("https://example.com").run("scrapetool --include-metatags");</code></pre>
+								<h3 id="ctxtabsnewfocus"><code>ctx.tabs.new().focus()</code></h3>
+								<p>Brings a newly opened tab into focus.</p>
+								<pre><code data-language="javascript">const tab = await ctx.tabs.new("https://example.com");
+await tab.focus();</code></pre>
+								<h3 id="ctxtabsnewclose"><code>ctx.tabs.new().close()</code></h3>
+								<p>Closes a newly opened tab after you're done with it.</p>
+								<pre><code data-language="javascript">const tab = await ctx.tabs.new();
+await tab.close();</code></pre>
+								<h3 id="ctxtabsthisruncmd"><code>ctx.tabs.this().run(cmd)</code></h3>
+								<p>Runs a lambda on the current tab. This is synonymous with <code>ctx.run()</code>.</p>
+								<pre><code data-language="javascript">await ctx.tabs.this().run("other-lambda arg1");</code></pre>
+								<h3 id="ctxtabsall"><code>ctx.tabs.all()</code></h3>
+								<p>Returns wrappers for all open tabs.</p>
+								<pre><code data-language="javascript">const tabs = await ctx.tabs.all();
+for (const tab of tabs) {
+  console.log(tab.title);
+}</code></pre>
+							</section>
+						</div>
+
+						<div class="doc-group" data-category="baah" id="category-baah">
+
+							<section class="doc-section">
+								<h1 id="baah-2"><code>baah</code></h1>
+								<p>Functions, triggers and styles should all be tracked in git on your machine. To sync them and run with the extension you need to use the CLI tool <code>baah</code>.</p>
+								<p>In short it:</p>
+								<ol>
+									<li>A <code>baah.toml</code> file is used to decide what files get synced.</li>
+									<li><code>baah push</code> starts a server waiting for connected browsers.</li>
+									<li>When the extension workspace is open it polls the changes.</li>
+									<li>You approve the diff.</li>
+									<li>Ready to go.</li>
+								</ol>
+
+							</section>
+
+							<section class="doc-section">
+								<h2 id="connections">Connections</h2>
+								<p>The <code>baah</code> CLI tool revolves around two resources: <code>connections</code>, which are individual authenticated connections to browsers on your machine, and <code>baah.toml</code> files with instructions for syncing a project through those established connections.</p>
+								<pre><code data-language="shell">npm install -g baah</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="installation">Commands</h2>
+
+								<pre><code data-language="shell">$ baah --help
+Usage:
+  baah init [path]                 Set up a project and browser connection
+    [--template minimal|starter] [--skills|--no-skills] [--skip-connection]
+  baah set &lt;name&gt; [--token TOKEN] [--port PORT]
+                                   Save a named connection to your browser extension
+  baah ls                          List saved connections
+  baah rm &lt;name&gt;                   Remove a saved connection
+  baah push &lt;name&gt;                 Push using a saved connection</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="init"><code>baah init .</code></h2>
+								<p>Use <code>baah init</code> to scaffold a project. If zero connections are found it will ask to create one (optional).</p>
+								<pre><code data-language="shell">$ baah init my-lambdas
+Choose a template:
+  1. Minimal — baah.toml only
+  2. Starter — baah.toml, functions/hello-world.js
+Template [1]: 1
+Include agent skills in .agents/skills/? [y/N]: n
+No browser connections yet
+Set up a new browser connection?
+- yes
+- no
+Choose [Y/n]: y
+Name new connection (e.g. chrome, work): chrome
+Open extension → Settings → Connection token → create a new token or reuse the existing one. Click to copy the token and paste it below (input is hidden).
+token:
+Use default port for updates (4455)?
+- yes (recommended)
+- no
+Choose [Y/n]: y
+✔ Added connection 'chrome'.
+✔ Created baah.toml
+✔ Project initialized at /path/to/my-lambdas
+
+Next:
+  cd '/path/to/my-lambdas'
+  Add your lambdas under functions/.
+  baah push chrome</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="set"><code>baah set</code></h2>
+								<p>Single command to create or update connections. If you change the default port remember to also change it in the connected browser.</p>
+								<pre><code data-language="shell">$ baah set chrome
+Token (hidden): &lt;entered token is hidden&gt;
+✔ Added connection 'chrome'.
+
+$ baah set chrome --token TOKEN --port 4455
+✔ Updated connection 'chrome'.
+
+$ baah set chrome --port 3333
+✔ Updated connection 'chrome'.</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="push"><code>baah push</code></h2>
+								<p>Starts a server that waits for the workspace to connect. Then it syncs your project with the extension’s storage according to your <code>baah.toml</code> file.</p>
+								<pre><code data-language="shell">$ baah push chrome
+▶ Loading functions...
+✔ Function loading complete
+▶ Connecting to client...
+✔ Client authenticated on ws://127.0.0.1:4455
+✔ Push complete</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="ls"><code>baah ls</code></h2>
+								<p>List all connections.</p>
+								<pre><code data-language="shell">$ baah ls
+Saved baah connections:
+ • chrome (port 4455)
+ • safari (port 4455)</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="rm"><code>baah rm</code></h2>
+								<p>Remove a single connection.</p>
+								<pre><code data-language="shell">$ baah rm chrome
+Removed connection 'chrome'.</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="configuration"><code>baah.toml</code></h2>
+								<p>Use the <code>include</code> and <code>exclude</code> globs to select what files are pushed and synced with your browser.</p>
+								<pre><code data-language="toml">[project]
+name = "my-project"
+
+[functions]
+include = ["functions/**/*.js"]
+exclude = ["functions/**/*.test.js", "functions/**/__*__/*"]
+
+[styles]
+include = ["styles/**/*.css"]
+
+[triggers]
+include = ["triggers/**/*.yaml"]</code></pre>
+							</section>
+
+						</div>
+
+					</article>
+				</main>
+			</div>
+		</div>
+	</body>
+</html>

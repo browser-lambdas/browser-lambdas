@@ -1,0 +1,12 @@
+/* Bundled fonts: see assets/fonts/*-OFL.txt for licenses. No remote font requests. */
+@font-face { font-family: "Lato"; src: url("../assets/fonts/Lato-Thin.ttf") format("truetype"); font-weight: 100; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lato"; src: url("../assets/fonts/Lato-Light.ttf") format("truetype"); font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lato"; src: url("../assets/fonts/Lato-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lato"; src: url("../assets/fonts/Lato-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lato"; src: url("../assets/fonts/Lato-Black.ttf") format("truetype"); font-weight: 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lato"; src: url("../assets/fonts/Lato-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Fira Mono"; src: url("../assets/fonts/FiraMono-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Fira Mono"; src: url("../assets/fonts/FiraMono-Medium.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Fira Mono"; src: url("../assets/fonts/FiraMono-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+
+:root { --font-ui: "Lato", sans-serif; --font-code: "Fira Mono", monospace; }

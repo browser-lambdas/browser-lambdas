@@ -1,0 +1,11 @@
+# Browser Lambdas
+
+> Browser-native automations with a fast shell, reusable lambdas, and zero friction.
+
+## Documentation
+
+{{SITEMAP}}
+
+## Content
+
+{{CONTENT}}

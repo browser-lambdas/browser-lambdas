@@ -1,0 +1,53 @@
+.app-nav {
+  width: 92px;
+  flex: 0 0 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0 18px;
+  border-right: 1px solid #2b222c;
+  background: #0f0a0f;
+  font-family: var(--font-ui);
+}
+.nav-top { width: 100%; display: flex; flex-direction: column; align-items: center; }
+.nav-item {
+  width: 100%;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  border-radius: 14px;
+  color: #fdfcfd;
+  text-decoration: none;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 24.7px;
+  transition: color .15s ease, transform .15s ease;
+}
+.nav-item:hover { color: #898589; }
+.nav-item.disabled { color: #898589; cursor: not-allowed; opacity: .65; }
+.nav-item.active { color: var(--panel-hover, #7f8572); }
+.nav-item:focus-visible { outline: 2px solid #fdfcfd; outline-offset: -2px; }
+.nav-icon { height: 27px; min-width: 27px; display: grid; place-items: center; line-height: 1; }
+.lucide-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.nav-icon img { width: 30px; height: 30px; object-fit: contain; }
+
+@media (max-width: 900px) {
+  .app-nav { width: 76px; flex-basis: 76px; }
+}
+
+.nav-item.nav-brand {
+  padding: 0;
+  aspect-ratio: 1;
+  margin-bottom: 18px;
+  /* Figma: 50px corners on a 150px tile, scaled to the navigation width. */
+  border-radius: 0 33.333% 33.333% 0;
+  background: #87f50a;
+  opacity: 1;
+  justify-content: center;
+}
+.nav-brand .nav-icon { width: 100%; height: 100%; }
+.nav-brand .nav-icon img { width: 88%; height: 88%; }

@@ -1,0 +1,28 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:unit
+      - run: bash ./compile.sh
+      - run: npm run test:e2e -- --headless --reaction-time=1000
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-test-results
+          path: extension/test-results/
+          retention-days: 7
