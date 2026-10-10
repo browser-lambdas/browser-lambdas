@@ -1,5 +1,5 @@
 {
-  "name": "baah",
+  "name": "@browser-lambdas/baah",
   "version": "0.1.0",
   "license": "MIT",
   "description": "Push local browser-lambdas to your extension with one command.",

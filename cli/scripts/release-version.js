@@ -12,7 +12,7 @@ export function releaseVersion(previous, pkg, lock) {
   const before = previous.version.split(".").map(BigInt);
   const difference = current.findIndex((part, index) => part !== before[index]);
   assert.ok(difference >= 0 && current[difference] > before[difference], "Version must increase");
-  assert.equal(pkg.name, "baah", "Unexpected package name");
+  assert.equal(pkg.name, "@browser-lambdas/baah", "Unexpected package name");
   assert.equal(lock.version, pkg.version, "Lockfile version must match");
   assert.equal(lock.packages[""].version, pkg.version, "Lockfile root version must match");
   return pkg.version;

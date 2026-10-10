@@ -3,7 +3,7 @@ import test from "node:test";
 import { releaseVersion } from "./release-version.js";
 
 function check(before, after, lockVersion = after, rootVersion = after) {
-  return releaseVersion({ version: before }, { name: "baah", version: after }, {
+  return releaseVersion({ version: before }, { name: "@browser-lambdas/baah", version: after }, {
     version: lockVersion, packages: { "": { version: rootVersion } },
   });
 }
