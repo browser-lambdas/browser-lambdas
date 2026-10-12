@@ -1,0 +1,76 @@
+name: Publish baah
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Serialize retries of the same commit without dropping other release commits.
+concurrency:
+  group: publish-baah-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Detect version bump
+        id: version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: node cli/scripts/release-version.js
+
+  publish:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: cli
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:package
+      - name: Create release tag
+        run: |
+          tag="baah-v$RELEASE_VERSION"
+          if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+            test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA" || {
+              echo "Tag $tag already points at another commit" >&2
+              exit 1
+            }
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+          fi
+      - name: Publish to npm
+        run: npm publish --access public --tag latest
+        env:
+          # Only needed to create the package; remove after configuring OIDC.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
