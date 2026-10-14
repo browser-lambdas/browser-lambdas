@@ -1,0 +1,14 @@
+/* Geometry for this composition only. Code colors, borders, typography, gutters,
+   and highlighting come directly from the workspace stylesheet and renderer. */
+.runtime-slide { --font-ui: 'Lato', sans-serif; --font-code: 'Fira Mono', monospace; }
+.runtime-slide .pitch { top: 170px; width: 430px; }
+.runtime-slide h1 { font-size: 58px; margin-bottom: 30px; }
+.runtime-slide .features { gap: 15px; }
+.runtime-slide .feature-icon { flex-basis: 62px; height: 62px; border-radius: 15px; }
+.runtime-slide .feature-icon svg { width: 33px; height: 33px; }
+.runtime-slide .features li { gap: 20px; min-height: 70px; }
+.runtime-slide .features p { font-size: 21px; }
+.runtime-examples { position: absolute; left: 500px; right: 28px; top: 105px; display: grid; gap: 16px; }
+.snippet header { height: 31px; display: flex; align-items: start; justify-content: space-between; padding: 0 5px; }
+.snippet h2 { margin: 0; font-size: 16px; line-height: 20px; font-weight: 700; color: var(--white); }
+.runtime-examples .function-code-box { height: 83px; min-height: 83px; }

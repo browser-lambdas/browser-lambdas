@@ -1,0 +1,9 @@
+.workspace-slide .pitch { top: 162px; width: 437px; }
+.workspace-slide h1 { font-size: 58px; margin-bottom: 27px; }
+.workspace-slide .features { gap: 16px; }
+.workspace-slide .features li { gap: 18px; min-height: 60px; }
+.workspace-slide .features p { font-size: 20px; line-height: 1.35; }
+.workspace-slide .feature-icon { flex-basis: 58px; height: 60px; border-radius: 15px; }
+.workspace-slide .feature-icon svg { width: 32px; height: 32px; }
+.workspace-shot { position: absolute; left: 500px; top: 103px; width: 752px; margin: 0; }
+.workspace-shot img { display: block; width: 752px; height: 632px; border: 1px solid var(--border); border-radius: 15px; background: var(--cold); box-shadow: 0 24px 60px #0005; }

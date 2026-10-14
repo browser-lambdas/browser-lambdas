@@ -41,7 +41,7 @@ export function buildExtension(outputDirectory = resolve(extensionRoot, 'build')
     const { version } = JSON.parse(readFileSync(resolve(extensionRoot, 'package.json'), 'utf8'));
     writeFileSync(join(outputDirectory, 'manifest.json'), JSON.stringify({ ...manifest, version }, null, 2) + '\n');
     copy(resolve(extensionRoot, 'assets/fonts'), 'assets/fonts');
-    for (const name of ['logo-hvid.svg', 'logo-sort.svg', 'logo-tekst.svg', 'logo-clean.png', 'logo-green.png', 'logo-lime.png', 'logo-purple.png']) {
+    for (const name of ['logo-clean.png', 'logo-lime.png']) {
         copy(resolve(extensionRoot, 'assets', name), `assets/${name}`);
     }
     for (const prefix of ['popup-icon', 'extension-page-icon']) {

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Lambdas — Advanced Runtime API</title>
+  <link rel="stylesheet" href="../../src/pages/workspace/workspace.css">
+  <link rel="stylesheet" href="product-pages.css">
+  <link rel="stylesheet" href="runtime-api.css">
+</head>
+<body>
+  <main class="slide runtime-slide">
+    <header class="brand"><img src="../../assets/logo-clean.png" alt=""><span>Browser Lambdas</span></header>
+    <section class="pitch">
+      <h1>Advanced<br>Runtime API</h1>
+      <ul class="features">
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="7" rx="11" ry="5"/><path d="M5 7v18c0 7 22 7 22 0V7M5 16c0 7 22 7 22 0"/></svg></span><p>kv (key-value) persistent<br>browser storage across sites</p></li>
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="11" cy="12" r="7"/><path d="m16 17 12 12m-6-6 4-4m-1 7 4-4"/></svg></span><p>Secrets for tokens<br>and sensitive data</p></li>
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="3" width="11" height="9" rx="2"/><rect x="19" y="20" width="11" height="9" rx="2"/><path d="M8 16v9h7m-4-4 4 4-4 4M17 7h7v9m-4-4 4 4 4-4"/></svg></span><p>Run other lambdas —<br>also on other tabs</p></li>
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="8" width="22" height="20" rx="3"/><path d="M8 3h18a3 3 0 0 1 3 3v17M3 14h22M10 21h8m-4-4v8"/></svg></span><p>Create, control<br>and destroy tabs</p></li>
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m5 6 9 10-9 10m15-2h9M22 5v8m-4-4h8"/></svg></span><p>Ergonomic multi-paradigm<br>arg parsing</p></li>
+      </ul>
+    </section>
+    <section class="runtime-examples" aria-label="Runtime API code examples">
+      <article class="snippet">
+        <header><h2>Persistent storage</h2></header>
+        <pre data-code>await ctx.kv.set("saved-text", window.getSelection().toString());
+const savedText = await ctx.kv.get("saved-text");</pre>
+      </article>
+      <article class="snippet">
+        <header><h2>Secrets at runtime</h2></header>
+        <pre data-code>const token = await ctx.secrets.get("API_TOKEN");
+await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });</pre>
+      </article>
+      <article class="snippet">
+        <header><h2>Compose functions, across tabs</h2></header>
+        <pre data-code>await ctx.run("self-destruct --sec 30");
+await ctx.tabs.new("https://example.com").run("self-destruct --sec 30");</pre>
+      </article>
+      <article class="snippet">
+        <header><h2>The full tab lifecycle</h2></header>
+        <pre data-code>const tab = await ctx.tabs.new("https://example.com");
+await tab.focus(); await tab.close();</pre>
+      </article>
+      <article class="snippet">
+        <header><h2>Positional args, flags &amp; aliases</h2></header>
+        <pre data-code>// greet Ada -v --tone=friendly
+const { 0: name, verbose, tone } = ctx.args.all({ v: "verbose" });</pre>
+      </article>
+    </section>
+  </main>
+  <script type="module" src="runtime-api.js"></script>
+</body>
+</html>

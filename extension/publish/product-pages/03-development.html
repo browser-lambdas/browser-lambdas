@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Lambdas — Smooth development</title>
+  <link rel="stylesheet" href="../../src/pages/workspace/workspace.css">
+  <link rel="stylesheet" href="product-pages.css">
+  <link rel="stylesheet" href="development.css">
+</head>
+<body>
+  <main class="slide development-slide">
+    <header class="brand"><img src="../../assets/logo-clean.png" alt=""><span>Browser Lambdas</span></header>
+    <section class="pitch">
+      <h1>Smooth<br>development</h1>
+      <ul class="features">
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="9" cy="6" r="3"/><circle cx="9" cy="26" r="3"/><circle cx="25" cy="11" r="3"/><path d="M9 9v14m0-7h8a8 8 0 0 0 8-8"/></svg></span><p>Keep source in git and<br>securely push to workspace<br>via CLI tool</p></li>
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 3h14l6 6v20H6zM20 3v7h6M11 16h10m-10 7 3 3 7-7"/></svg></span><p>Control what syncs with<br><code>baah.toml</code> files and optionally<br>approve diffs before they activate</p></li>
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m11 7-8 9 8 9m10-18 8 9-8 9M18 3l-4 26"/></svg></span><p>Do more things than user-scripts<br>with advanced runtime API<br>and multiple execution worlds</p></li>
+        <li><span class="feature-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 4 8v9c0 6 12 12 12 12s12-6 12-12V8zM10 16l4 4 8-9"/></svg></span><p>Manage security settings<br>in workspace</p></li>
+      </ul>
+    </section>
+    <section class="development-visuals" aria-label="Local development and workspace review">
+      <div class="local-files">
+        <article><h2>From your terminal</h2><pre class="cli-code">npm i -g @browser-lambdas/baah
+baah init my-tools
+cd my-tools &amp;&amp; baah push chrome</pre></article>
+        <article><h2>baah.toml</h2><pre class="cli-code">[functions]
+include = ["functions/**/*.js"]
+exclude = ["**/*.test.js"]</pre></article>
+      </div>
+      <div class="review-preview" id="review-preview" aria-label="Workspace diff review"></div>
+      <section class="security-preview form-pane function-form" data-workspace-security aria-label="Workspace execution-world settings"></section>
+    </section>
+  </main>
+  <script type="module" src="development.js"></script>
+</body>
+</html>

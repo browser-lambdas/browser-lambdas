@@ -1,0 +1,10 @@
+.hero-viewport { width: 1280px; height: 800px; }
+.hero-viewport .campaign-slide { left: 0; top: 0; transform: none; }
+/* Two clear focal areas: the playful brand on the left, the promise on the right. */
+.hero-viewport .campaign-mascot { top: 55px; left: 115px; width: 500px; height: 500px; }
+.hero-viewport .campaign-wordmark { left: -88px; top: 153px; transform: scale(.7); transform-origin: top left; }
+.hero-viewport .campaign-aura { left: -40px; top: 60px; width: 780px; height: 700px; }
+.hero-eyebrow { position: absolute; left: 760px; top: 178px; margin: 0; color: #c79bea; font: 700 17px/1.4 'Lato', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
+.hero-values { position: absolute; left: 756px; top: 231px; margin: 0; padding: 0; display: grid; gap: 16px; list-style: none; color: #e7fdce; font: 900 72px/1.15 'Lato', sans-serif; letter-spacing: -2px; }
+.hero-values li { white-space: nowrap; }
+

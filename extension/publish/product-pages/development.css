@@ -1,0 +1,18 @@
+.development-slide { --font-ui: 'Lato', sans-serif; --font-code: 'Fira Mono', monospace; }
+.development-slide .pitch { top: 172px; width: 443px; }
+.development-slide h1 { font-size: 54px; margin-bottom: 31px; }
+.development-slide .features { gap: 22px; }
+.development-slide .features li { gap: 18px; min-height: 76px; }
+.development-slide .feature-icon { flex-basis: 58px; height: 62px; border-radius: 15px; }
+.development-slide .feature-icon svg { width: 32px; height: 32px; }
+.development-slide .features p { font-size: 20px; line-height: 1.4; }
+.development-slide .features code { font: inherit; }
+.development-visuals { position: absolute; left: 510px; right: 28px; top: 101px; display: grid; gap: 17px; }
+.local-files { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; }
+.local-files h2 { margin: 0 0 11px 4px; font-size: 16px; color: var(--white); }
+.cli-code { margin: 0; padding: 15px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--code); color: var(--green); font: 12px/24px 'Fira Mono', monospace; }
+.review-preview { height: 270px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 14px; }
+/* Keep the real workspace palette inside the product page's brand palette. */
+.review-preview, .security-preview { --green: #6cc408; --panel: #0f0a0f; }
+.security-preview.form-pane { width: 100%; padding: 15px 24px 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--code); font-size: 14px; }
+.security-preview.function-form .access-controls { max-width: none; }

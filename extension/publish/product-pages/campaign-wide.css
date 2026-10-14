@@ -1,0 +1,6 @@
+/* Wide promotional canvas: same assets, a horizontal composition, no stretching. */
+.campaign-wide { width: 1400px; height: 560px; }
+.campaign-wide .campaign-slide { width: 1400px; height: 560px; left: 0; top: 0; transform: none; }
+.campaign-wide .campaign-mascot { left: 40px; top: -55px; width: 650px; height: 650px; }
+.campaign-wide .campaign-wordmark text { font-size: 180px; stroke-width: 28px; }
+.campaign-wide .campaign-aura { left: 110px; top: -40px; width: 1170px; height: 650px; }
