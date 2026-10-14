@@ -4,6 +4,10 @@
 
 ## Documentation
 
+- [Demo](/index.md#demo)
+  - [Preloaded functions](/index.md#preloaded-functions)
+    - [hello](/index.md#hello)
+    - [vi-nav](/index.md#vi-nav)
 - [Hack your browsing](/index.md#hack-your-browsing)
   - [How It Works](/index.md#how-it-works)
 - [Hello world](/index.md#hello-world)
@@ -38,6 +42,56 @@
 ## Content
 
 Source: /index.md
+
+# Demo
+
+Type Cmd+K or Ctrl+K on _any page_ to open a demo terminal with preloaded lambda functions.
+
+If you cannot find those keys on your keyboard you can click this button:
+
+I lost my keys
+
+## Preloaded functions
+
+See below for some lambda functions that was pre-loaded for you.
+
+### hello
+
+```
+const { 0: name = 'human' } = ctx.args.all();
+console.log(`Hello, ${name}!`);
+```
+
+For details on args see [ctx args section](#args).
+
+### vi-nav
+
+Run `vi-nav on`. Use h/l for previous/next badge and j/k to scroll down/up. Run `vi-nav off` to stop.
+
+```
+// Click outside the terminal to use h/j/k/l.
+const { 0: mode } = ctx.args.all();
+window.viNav?.abort();
+if (mode === 'off') {
+console.log('vi-nav off');
+return;
+}
+window.viNav = new AbortController();
+document.addEventListener('keydown', (event) => {
+if (event.ctrlKey || event.metaKey || event.target.closest('input, textarea')) return;
+if (!['h', 'j', 'k', 'l'].includes(event.key)) return;
+event.preventDefault();
+if (event.key === 'h' || event.key === 'l') {
+const badges = [...document.querySelectorAll('.docs-categories a')];
+const current = badges.findIndex(badge => badge.hasAttribute('aria-current'));
+const next = current + (event.key === 'h' ? -1 : 1);
+badges[next]?.click();
+} else {
+window.scrollBy({ top: event.key === 'j' ? 120 : -120, behavior: 'instant' });
+}
+}, { signal: window.viNav.signal });
+console.log('vi-nav on (psst.. go out of terminal)');
+```
 
 # Hack your browsing
 

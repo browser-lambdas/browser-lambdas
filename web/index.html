@@ -8,6 +8,8 @@
 		<link rel="stylesheet" href="styles.css" />
 		<script src="llms-data.js" defer></script>
 		<script src="highlight.js" defer></script>
+		<script src="demo.js" defer></script>
+		<script src="demo-shell-ui.js" defer></script>
 		<script src="script.js" defer></script>
 	</head>
 	<body>
@@ -19,6 +21,7 @@
 					</a>
 					<div class="docs-categories" role="group" aria-label="Main categories">
 						<a href="#category-intro" data-category-link="intro">intro</a>
+						<a href="#category-demo" data-category-link="demo">demo</a>
 						<a href="#category-hello-world" data-category-link="quick-start">hello world</a>
 						<a href="#category-ctx" data-category-link="ctx">ctx</a>
 						<a href="#category-baah" data-category-link="baah">baah</a>
@@ -30,6 +33,46 @@
 
 				<main class="docs-content">
 					<article class="docs-prose" id="docs-content">
+						<div class="doc-group" data-category="demo" id="category-demo" hidden>
+							<section class="doc-section">
+								<h1 id="demo">Demo</h1>
+								<p>Type Cmd+K or Ctrl+K on <em>any page</em> to open a demo terminal with preloaded lambda functions.</p>
+								<p>If you cannot find those keys on your keyboard you can click this button:</p>
+								<p><button type="button" class="demo-open" data-open-demo>I lost my keys</button></p>
+							</section>
+							<section class="doc-section">
+								<h2 id="demo-lambdas">Preloaded functions</h2>
+								<p>See below for some lambda functions that was pre-loaded for you.</p>
+								<h3 id="demo-hello" data-toc>hello</h3>
+								<pre><code id="demo-hello-source" data-language="javascript">const { 0: name = 'human' } = ctx.args.all();
+console.log(`Hello, ${name}!`);</code></pre>
+								<p>For details on args see <a href="#args">ctx args section</a>.</p>
+								<h3 id="demo-vi-nav" data-toc>vi-nav</h3>
+								<p>Run <code>vi-nav on</code>. Use h/l for previous/next badge and j/k to scroll down/up. Run <code>vi-nav off</code> to stop.</p>
+								<pre><code id="demo-vi-nav-source" data-language="javascript">// Click outside the terminal to use h/j/k/l.
+const { 0: mode } = ctx.args.all();
+window.viNav?.abort();
+if (mode === 'off') {
+    console.log('vi-nav off');
+    return;
+}
+window.viNav = new AbortController();
+document.addEventListener('keydown', (event) =&gt; {
+    if (event.ctrlKey || event.metaKey || event.target.closest('input, textarea')) return;
+    if (!['h', 'j', 'k', 'l'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'h' || event.key === 'l') {
+        const badges = [...document.querySelectorAll('.docs-categories a')];
+        const current = badges.findIndex(badge =&gt; badge.hasAttribute('aria-current'));
+        const next = current + (event.key === 'h' ? -1 : 1);
+        badges[next]?.click();
+    } else {
+        window.scrollBy({ top: event.key === 'j' ? 120 : -120, behavior: 'instant' });
+    }
+}, { signal: window.viNav.signal });
+console.log('vi-nav on (psst.. go out of terminal)');</code></pre>
+							</section>
+						</div>
 						<div class="doc-group" data-category="intro" id="category-intro">
 
 							<section class="doc-section">

@@ -12,6 +12,7 @@ test('category navigation, deep links, history and responsive layout', async () 
 		const url = pathToFileURL(resolve(__dirname, 'index.html')).href;
 		await page.goto(url);
 		const expected = {
+			demo: ['Demo', 'Preloaded functions', 'hello', 'vi-nav'],
 			intro: ['Hack your browsing', 'How It Works'],
 			'quick-start': ['Hello world', 'Whats next?'],
 			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Run', 'Tabs'],
