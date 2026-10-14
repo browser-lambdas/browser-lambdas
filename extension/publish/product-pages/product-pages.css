@@ -3,7 +3,7 @@
 @font-face { font-family: Lato; src: url('../../assets/fonts/Lato-Bold.ttf'); font-weight: 700; }
 @font-face { font-family: Lato; src: url('../../assets/fonts/Lato-Black.ttf'); font-weight: 900; }
 @font-face { font-family: 'Fira Mono'; src: url('../../assets/fonts/FiraMono-Regular.ttf'); }
-:root { --white: #fdfcfd; --green: #e7fdce; --purple: #c79bea; --soot: #0f0a0f; --cold: #160e16; --panel: #231a24; --border: #49344d; }
+:root { --white: #fdfcfd; --green: #e7fdce; --soot: #0f0a0f; --cold: #160e16; --panel: #231a24; --border: #49344d; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--soot); color: var(--white); font-family: Lato, sans-serif; }
 .slide { position: relative; width: 1280px; height: 800px; overflow: hidden; background: radial-gradient(ellipse at 75% 55%, #26172a 0, #160e16 42%, #0f0a0f 85%); }
@@ -11,13 +11,12 @@ body { margin: 0; background: var(--soot); color: var(--white); font-family: Lat
 .brand img { width: 70px; height: 70px; object-fit: contain; }
 .pitch { position: absolute; left: 54px; top: 180px; width: 420px; }
 h1 { margin: 0 0 38px; font-size: 59px; line-height: 1.02; letter-spacing: -1.8px; font-weight: 900; }
-h1 span { color: var(--green); }
-.features { padding: 0; margin: 0; list-style: none; display: grid; gap: 25px; }
+h1 { color: var(--green); }
+.features { padding: 0; margin: 0; list-style: none; display: grid; gap: 22px; }
 .features li { display: flex; align-items: center; gap: 26px; min-height: 74px; }
 .feature-icon { display: grid; place-items: center; flex: 0 0 73px; height: 73px; border-radius: 17px; border: 1px solid #473549; background: linear-gradient(135deg,#352737,#241b27); box-shadow: inset 0 1px 0 #ffffff09; }
 .feature-icon svg { width: 39px; height: 39px; stroke: #b96df1; stroke-width: 2.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.features p { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.42; letter-spacing: -.4px; }
-.features em { color: var(--purple); font-style: normal; font-size: 20px; }
+.features p { color: var(--green); margin: 0; font-size: 21px; font-weight: 700; line-height: 1.42; letter-spacing: -.4px; }
 .browser { position: absolute; left: 480px; top: 92px; width: 772px; height: 645px; border: 1px solid var(--border); border-radius: 17px; overflow: hidden; background: var(--cold); box-shadow: 0 24px 60px #0005; }
 .tabs { height: 43px; display: flex; align-items: end; gap: 17px; padding: 0 18px; background: linear-gradient(110deg,#19131c,#211724); }
 .traffic { display: flex; align-self: center; gap: 10px; margin-right: 22px; }
@@ -29,4 +28,7 @@ h1 span { color: var(--green); }
 .browser-content { position: relative; height: 561px; padding-left: 49px; background: white; }.rail { position: absolute; left: 0; top: 0; bottom: 0; width: 49px; background: #242126; display: flex; align-items: center; flex-direction: column; gap: 21px; padding-top: 16px; font-size: 27px; }.rail b { font: 700 23px Georgia,serif; color: #151515; background: white; border: 1px solid var(--green); padding: 0 3px; border-radius: 5px; }
 iframe { width: 100%; height: 100%; border: 0; background: white; }
 /* Only placement belongs to the composition. The loaded extension owns all shell UI. */
-.shell-placement { position: absolute; top: 151px; right: 20px; width: 427px; height: 367px; pointer-events: none; }
+.shell-placement { position: absolute; top: 151px; right: 20px; width: 520px; height: 440px; pointer-events: none; }
+
+.binary-icon { font-family: "Fira Mono", monospace; font-size: 22px; line-height: 1.05; letter-spacing: 3px; color: #b96df1; }
+.ascii-cat { white-space: nowrap; }

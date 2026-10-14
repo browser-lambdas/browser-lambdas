@@ -40,6 +40,8 @@ export async function runShellDemo(page, worker) {
   if (!await anchor.count()) return;
   const name = await anchor.getAttribute('data-shell-demo');
   if (!/^[a-z0-9-]+$/.test(name)) throw new Error('Invalid demo name.');
+  const command = await anchor.getAttribute('data-shell-command') || name;
+  if (command.split(/\s+/)[0] !== name) throw new Error('Demo command must start with the demo name.');
   const readyText = await anchor.getAttribute('data-shell-ready');
   if (!readyText) throw new Error('Demo needs a data-shell-ready output marker.');
   const code = await readFile(new URL(`./demos/${name}.js`, import.meta.url), 'utf8');
@@ -57,7 +59,7 @@ export async function runShellDemo(page, worker) {
   }, { name, code, bounds, url: page.url() });
   const shell = page.frameLocator('#browser-lambdas-shell');
   const input = shell.locator('#shell-input');
-  await input.fill(name);
+  await input.fill(command);
   await input.press('Enter');
   await shell.locator('#shell-outputs p').filter({ hasText: readyText }).waitFor();
   await shell.getByRole('button', { name: 'Set shell position' }).click();

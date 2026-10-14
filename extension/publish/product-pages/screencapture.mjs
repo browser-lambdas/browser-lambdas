@@ -1,3 +1,5 @@
+import { captureWorkspace } from './workspace-capture.mjs';
+import { prepareWorkspacePreview } from './workspace-preview.mjs';
 import { launchDemoContext, runShellDemo } from './extension-demo.mjs';
 import { createServer } from 'node:http';
 import { readFile, readdir, mkdir } from 'node:fs/promises';
@@ -23,7 +25,7 @@ const server = createServer(async (request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
     const file = resolve(root, `.${pathname}`);
     // Serve only the source assets used by the product pages.
-    const allowed = ['publish/product-pages', 'assets'].some(folder => file.startsWith(resolve(root, folder) + sep));
+    const allowed = ['publish/product-pages', 'assets', 'src/pages/workspace'].some(folder => file.startsWith(resolve(root, folder) + sep));
     if (!allowed) { response.writeHead(403).end(); return; }
     const body = await readFile(file);
     response.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' }).end(body);
@@ -45,6 +47,14 @@ try {
       const failures = [];
       page.on('pageerror', error => failures.push(error.message));
       await page.goto(base + screen, { waitUntil: 'load', timeout: 60000 });
+      const size = await page.evaluate(() => ({
+        width: Number(document.documentElement.dataset.captureWidth ?? 1280),
+        height: Number(document.documentElement.dataset.captureHeight ?? 800)
+      }));
+      if (![size.width, size.height].every(value => Number.isInteger(value) && value > 0 && value <= 8192)) {
+        throw new Error(`${screen}: invalid capture dimensions.`);
+      }
+      await page.setViewportSize(size);
       await page.waitForSelector('html[data-ready="true"]');
       for (const iframe of await page.locator('iframe[data-ready-selector]').all()) {
         const marker = await iframe.getAttribute('data-ready-selector');
@@ -52,6 +62,8 @@ try {
         await iframe.contentFrame().locator(marker).waitFor({ state: 'visible', timeout: 60000 });
       }
       await runShellDemo(page, demo.worker);
+      await prepareWorkspacePreview(page, demo.worker);
+      await captureWorkspace(page, demo.worker);
       console.log(`Loaded ${screen}; waiting for visible assets…`);
       for (const frame of page.frames()) {
         await frame.evaluate(async () => {
@@ -71,12 +83,12 @@ try {
         });
       }
       if (failures.length) throw new Error(failures.join('\n'));
-      const fits = await page.evaluate(() => document.documentElement.scrollWidth === 1280 && document.documentElement.scrollHeight === 800);
-      if (!fits) throw new Error(`${screen}: layout exceeds the 1280 × 800 canvas.`);
+      const fits = await page.evaluate(({ width, height }) => document.documentElement.scrollWidth === width && document.documentElement.scrollHeight === height, size);
+      if (!fits) throw new Error(`${screen}: layout exceeds the ${size.width} × ${size.height} canvas.`);
       const output = resolve(directory, 'output', screen.replace(/\.html$/, '.jpg'));
       await page.mouse.move(0, 0);
       await page.screenshot({ path: output, type: 'jpeg', quality: 95, fullPage: false, animations: 'disabled', caret: 'hide' });
-      console.log(`Captured 1280 × 800: ${output}`);
+      console.log(`Captured ${size.width} × ${size.height}: ${output}`);
       if (!serve) await page.close();
     }
     if (serve) {

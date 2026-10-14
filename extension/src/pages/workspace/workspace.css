@@ -353,6 +353,7 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .security-check { display: inline-flex; align-items: center; gap: 7px; color: var(--text); cursor: pointer; }
 .security-check.disabled { color: var(--muted); cursor: not-allowed; opacity: .6; }
 .security-help { font-size: 12px; font-weight: 400; }
+.security-help a { color: #e7fdce; }
 .form-pane textarea.security-patterns { min-height: 100px; }
 .form-pane input:focus, .form-pane textarea:focus { border-color: var(--line-strong); }
 .form-copy, .form-reveal {

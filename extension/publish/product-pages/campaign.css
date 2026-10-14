@@ -1,0 +1,15 @@
+@font-face { font-family: 'Lilita One'; src: url('assets/LilitaOne-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; }
+/* Native vector/CSS artwork plus the existing mascot and bundled Lilita One.
+   Keep the 1280 × 800 design coordinates; render uniformly into a 440 × 280 tile. */
+.campaign-slide { background: #23102b; isolation: isolate; }
+.campaign-clouds, .campaign-sparkles { position: absolute; inset: 0; width: 100%; height: 100%; }
+.campaign-aura { position: absolute; left: 280px; top: 80px; width: 720px; height: 680px; background: radial-gradient(ellipse, #ac4dde38, #ac4dde00 68%); }
+.campaign-sparkles { fill: #c79bea; filter: drop-shadow(0 0 12px #b96df12b); }
+.campaign-mascot { position: absolute; width: 600px; height: 600px; left: 340px; top: -25px; filter: drop-shadow(0 0 14px #b96df180) drop-shadow(0 0 30px #a74bd459); }
+/* SVG gives the outline round joins, avoiding sharp CSS text-stroke corners. */
+.campaign-wordmark { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 15px #b96df159); }
+.campaign-wordmark text { font-family: 'Lilita One', sans-serif; font-size: 205px; font-weight: 400; letter-spacing: -4px; fill: #e7fdce; stroke: #210627; stroke-width: 30px; stroke-linejoin: round; paint-order: stroke fill; }
+
+/* Scale uniformly to the tile height, cropping only 4px from each side. */
+.campaign-viewport { position: relative; width: 440px; height: 280px; overflow: hidden; }
+.campaign-viewport .campaign-slide { position: absolute; left: -4px; top: 0; transform: scale(.35); transform-origin: top left; }
