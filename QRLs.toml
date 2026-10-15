@@ -1,0 +1,8 @@
+[constants]
+repo = "https://github.com/browser-lambdas/browser-lambdas"
+
+[bl]
+issues = "{constants.repo}/issues"
+
+[bl.issue]
+new = "{constants.repo}/issues/new?title={title}&body={description}"
