@@ -36,7 +36,7 @@ jobs:
       - run: npm run test:unit
       - run: bash ./compile.sh
       - run: npm run test:e2e -- --headless --reaction-time=1000
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-test-results
