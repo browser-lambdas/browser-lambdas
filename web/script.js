@@ -11,8 +11,7 @@ function initializeNavigation() {
 			else badge.removeAttribute('aria-current');
 		}
 		toc.replaceChildren();
-		for (const section of group.querySelectorAll(':scope > .doc-section')) {
-			const heading = section.querySelector('h1, h2');
+		for (const heading of group.querySelectorAll(':scope > .doc-section > h1, :scope > .doc-section > h2, [data-toc]')) {
 			const item = document.createElement('li');
 			const link = document.createElement('a');
 			link.href = `#${heading.id}`;
@@ -26,7 +25,7 @@ function initializeNavigation() {
 		let id;
 		try { id = decodeURIComponent(location.hash.slice(1)); } catch { id = ''; }
 		const target = document.getElementById(id);
-		const group = target?.closest('.doc-group') || groups[0];
+		const group = target?.closest('.doc-group') || groups.find(group => group.dataset.category === 'intro');
 		showGroup(group);
 		if (scroll && target && target !== group && target.closest('.doc-group')) target.scrollIntoView({ block: 'start', behavior: 'instant' });
 	}

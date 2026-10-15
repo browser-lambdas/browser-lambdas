@@ -3,6 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Bundle the extension parser and UI, with separate demo element/style names.
+sed 's/^export const parseArgs/const parseArgs/' ../extension/src/background/parseArgs.js > demo-shell-ui.js
+sed -e 's/browser-lambdas-shell/browser-lambdas-demo-terminal/g' \
+    -e 's/shell-/demo-shell-/g' \
+    -e 's/browser-lambdas-default-style/browser-lambdas-demo-default-style/g' \
+    -e 's/browser-lambdas-user-style/browser-lambdas-demo-user-style/g' \
+    ../extension/src/pages/shell/shellUi.js >> demo-shell-ui.js
+
 html_files=()
 for file in *.html; do
 	[ -e "$file" ] || continue
@@ -208,3 +216,5 @@ BEGIN {
 } > llms-data.js
 
 echo "Generated ${html_files[*]/%.html/.md} and llms.txt"
+
+echo "Website build complete."

@@ -14,6 +14,20 @@
 	--brand-shiny-cyan: #4cf0f0;
 }
 
+.demo-open {
+	border: 1px solid var(--badge-green);
+	border-radius: 999px;
+	padding: 0.6rem 1rem;
+	background: var(--badge-green);
+	color: var(--brand-soot-black);
+	font: inherit;
+	cursor: pointer;
+}
+.demo-open:focus-visible {
+	outline: 2px solid var(--brand-shiny-cyan);
+	outline-offset: 4px;
+}
+
 * {
 	box-sizing: border-box;
 	scrollbar-color: var(--brand-monsoon-grey) transparent;
