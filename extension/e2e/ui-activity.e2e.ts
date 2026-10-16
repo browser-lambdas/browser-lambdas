@@ -5,10 +5,8 @@ test.describe.configure({ timeout: 120_000 });
 test('activity logs can be viewed and filtered by tab and level', async ({ page, extensionId, localTestPage }) => {
 	const workspaceUrl = `chrome-extension://${extensionId}/workspace.html#activity`;
 	await page.goto(workspaceUrl);
-	// The worker shares extension storage across tests. Remove earlier triggers
-	// before opening a web tab so they cannot append logs to the arranged export.
+	// Prevent triggers from earlier tests from running in the target tab.
 	await page.evaluate(() => chrome.storage.local.set({
-		activityLogs: [],
 		local_storage_key_triggers: JSON.stringify([])
 	}));
 
@@ -26,17 +24,25 @@ test('activity logs can be viewed and filtered by tab and level', async ({ page,
 	const targetTab = await page.evaluate(async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url), targetUrl);
 	expect(targetTab).toBeDefined();
 	const targetTabId = targetTab?.id as number;
-	const arranged = await page.evaluate(async ({ tabId, uri }) => {
-		const logs = [
-			{ id: 'debug-test', timestamp: Date.now() - 2, tabId, uri, message: 'activity debug 🐑\nnext', level: 'debug' },
-			{ id: 'info-test', timestamp: Date.now() - 1, tabId, uri, message: `activity info test ${'long message '.repeat(30)}`, level: 'info' },
-			{ id: 'error-test', timestamp: Date.now(), tabId, uri, message: '<script id="activity-owned">activity error test</script>', level: 'error' }
+	const arranged = await page.evaluate(async (tabId) => {
+		const entries = [
+			{ level: 'debug', message: 'activity debug 🐑\nnext' },
+			{ level: 'info', message: `activity info test ${'long message '.repeat(30)}` },
+			{ level: 'error', message: '<script id="activity-owned">activity error test</script>' }
 		];
-		await chrome.storage.local.set({ activityLogs: logs });
-		return logs;
-	}, { tabId: targetTabId, uri: localTestPage });
-	// Load the workspace from the arranged snapshot instead of depending on the
-	// timing of a storage event from earlier tests or content-script activity.
+		// Use the real writer's queue and tab context instead of replacing storage mid-write.
+		await chrome.scripting.executeScript({
+			target: { tabId },
+			world: 'ISOLATED',
+			args: [entries],
+			func: async (logs) => {
+				for (const entry of logs) await chrome.runtime.sendMessage({ type: 'ACTIVITY_LOG', ...entry });
+			}
+		});
+		const { activityLogs } = await chrome.storage.local.get('activityLogs');
+		return activityLogs.filter((entry) => entry.tabId === tabId && entries.some((log) => log.message === entry.message));
+	}, targetTabId);
+	expect(arranged).toHaveLength(3);
 	await page.reload();
 	await expect(page.getByRole('heading', { name: 'Activity logs' })).toBeVisible();
 	await page.locator('[data-action="open-item"]').filter({ hasText: 'All' }).click();
@@ -54,11 +60,14 @@ test('activity logs can be viewed and filtered by tab and level', async ({ page,
 	let jsonl = '';
 	for await (const chunk of contents) jsonl += chunk.toString();
 	const downloadedRows = jsonl.trim().split('\n').map((line) => JSON.parse(line));
-	expect(downloadedRows).toEqual([...arranged].reverse());
+	const arrangedIds = new Set(arranged.map((entry) => entry.id));
+	const expectedRows = [...arranged].reverse();
+	expect(downloadedRows.filter((entry) => arrangedIds.has(entry.id))).toEqual(expectedRows);
 	await page.getByRole('button', { name: 'Copy JSONL' }).click();
 	await expect(page.getByRole('button', { name: 'Copied!' })).toBeVisible();
 	const copiedJsonl = await page.evaluate(() => navigator.clipboard.readText());
-	expect(copiedJsonl).toBe(jsonl);
+	const copiedRows = copiedJsonl.trim().split('\n').map((line) => JSON.parse(line));
+	expect(copiedRows.filter((entry) => arrangedIds.has(entry.id))).toEqual(expectedRows);
 	const expectedWebTabs = await page.evaluate(async () => (await chrome.tabs.query({}))
 		.filter((tab) => !/^(chrome|moz)-extension:/.test(tab.url || '')).length);
 	await expect(page.locator('[data-action="open-item"][data-id^="activity-tab-"]')).toHaveCount(expectedWebTabs);

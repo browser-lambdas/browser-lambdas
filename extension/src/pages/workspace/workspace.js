@@ -32,6 +32,7 @@ const SECTION_META = {
 
 const app = document.getElementById('app');
 let cleanupBaahSync = null;
+let categoryHoverTimer = null;
 
 const state = {
   tab: 'functions',
@@ -58,6 +59,7 @@ const state = {
   allowMainWorldStorage: false,
   allowMainWorldFunctions: false,
   allowMainWorldTriggers: false,
+  sidebarRename: null,
   notice: ''
 };
 
@@ -545,14 +547,54 @@ function renderItemButton(item, tab = state.tab) {
   const favicon = tab === 'activity' && item.tabId != null && item.favicon
     ? `<img class="activity-favicon" src="${escapeHtml(item.favicon)}" alt="" />`
     : '';
-  return `<div class="item-button ${item._review ? 'review-item' : ''} ${locked ? 'pending-locked' : ''}" data-action="open-item" data-id="${item.id}" data-testid="sidebar-${tab}-item" role="button" tabindex="0">
+  return `<div class="item-button ${state.sidebarRename?.item.id === item.id ? 'renaming' : ''} ${item._review ? 'review-item' : ''} ${locked ? 'pending-locked' : ''}" data-action="open-item" data-id="${item.id}" data-testid="sidebar-${tab}-item" role="button" tabindex="0">
         ${favicon}
-        <span class="item-label">${prefix}${escapeHtml(label)}</span>
+        ${state.sidebarRename?.item.id === item.id && state.sidebarRename.tab === tab ? `<span class="sidebar-rename"><input data-action="rename-input" aria-label="New name" value="${escapeHtml(state.sidebarRename.value)}" ${state.sidebarRename.saving ? 'disabled' : ''} /><button class="mini-button" data-action="save-rename" aria-label="Save name">✓</button><button class="mini-button" data-action="cancel-rename" aria-label="Cancel rename">×</button>${state.sidebarRename.error ? `<span class="form-error" role="alert">${escapeHtml(state.sidebarRename.error)}</span>` : ''}</span>` : `<span class="item-label">${prefix}${escapeHtml(label)}</span>`}
         ${item._review ? '' : `<span class="split-actions">
+          ${tab === 'activity' ? '' : `<button class="mini-button" data-action="rename-item" data-id="${item.id}" title="Rename" aria-label="Rename"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5" /></svg></button>`}
           <button class="mini-button" data-action="split-item" data-id="${item.id}" data-dir="horizontal" title="Split right" aria-label="Split right">${lucideIcon('splitHorizontal')}</button>
           <button class="mini-button" data-action="split-item" data-id="${item.id}" data-dir="vertical" title="Split down" aria-label="Split down">${lucideIcon('splitVertical')}</button>
         </span>`}
       </div>`;
+}
+
+async function renameSidebarItem() {
+  const draft = state.sidebarRename;
+  if (!draft || draft.saving) return;
+  const field = ['storage', 'secrets'].includes(draft.tab) ? 'key' : 'name';
+  const value = draft.value.trim();
+  try {
+    if (!value) throw new Error('Enter a name.');
+    draft.saving = true;
+    const type = PANE_TYPE_BY_TAB[draft.tab];
+    const items = await ({ functions: getLambdas, storage: getStorageItems, secrets: getSecrets, triggers: getTriggers, styles: getShellThemes })[draft.tab]();
+    const current = items.find((item) => item.id === draft.item.id);
+    if (!current || !sameStorageRecord(current, draft.item)) throw new Error('This item changed elsewhere. Cancel and try again.');
+    if (items.some((item) => item.id !== current.id && String(item[field] || '').trim() === value && (field === 'key' || (item.project || 'default') === (current.project || 'default')))) throw new Error('An item with this name already exists.');
+    const updated = { ...current, [field]: value };
+    if (type === 'storage') {
+      const result = await mutateStorageItem('update', updated, current);
+      if (!result?.success) throw new Error(result?.error || 'Storage could not be saved.');
+      Object.assign(updated, result.item);
+    } else {
+      await ({ functions: storeLambdas, secrets: storeSecrets, triggers: storeTriggers, styles: storeShellThemes })[draft.tab](items.map((item) => item.id === current.id ? updated : item));
+    }
+    setItems(type, items.map((item) => item.id === current.id ? updated : item));
+    const visit = (node) => {
+      if (!node) return;
+      if (node.type !== 'pane') { node.children.forEach(visit); return; }
+      if (node.pane.type !== type || node.pane.item.id !== updated.id || !sameStorageRecord(node.pane.item, current)) return;
+      if (node.pane.editable[field] === current[field]) node.pane.editable[field] = value;
+      node.pane.item = clone(updated);
+    };
+    visit(state.root);
+    state.sidebarRename = null;
+    state.notice = '';
+  } catch (error) {
+    draft.saving = false;
+    draft.error = error.message;
+  }
+  render();
 }
 
 function renderProjectHeader(project, canDelete = true) {
@@ -661,10 +703,10 @@ function paneTitle(node) {
   }
   if (type === 'review') return `<span class="pane-title readonly">Review ${escapeHtml(editable.batch?.project || 'baah push')}</span>`;
   if (type === 'lambda') return `<input class="pane-title" data-testid="pane-title" data-pane-id="${node.id}" data-field="name" value="${escapeHtml(editable.name)}" placeholder="untitled-function" />`;
-  if (type === 'storage') return `<span class="pane-title readonly" data-pane-id="${node.id}" data-testid="pane-title">${escapeHtml(editable.key || 'untitled-key')}</span>`;
+  if (type === 'storage') return `<input class="pane-title" data-pane-id="${node.id}" data-testid="pane-title" data-field="key" aria-label="Name" value="${escapeHtml(editable.key)}" placeholder="untitled-key" />`;
   if (type === 'trigger') return `<input class="pane-title" data-testid="pane-title" data-pane-id="${node.id}" data-field="name" value="${escapeHtml(editable.name)}" placeholder="untitled-trigger" />`;
   if (type === 'style') return `<input class="pane-title" data-testid="pane-title" data-pane-id="${node.id}" data-field="name" value="${escapeHtml(editable.name)}" placeholder="untitled-style" />`;
-  return `<span class="pane-title readonly" data-pane-id="${node.id}" data-testid="pane-title">${escapeHtml(editable.key || 'untitled-secret')}</span>`;
+  return `<input class="pane-title" data-pane-id="${node.id}" data-testid="pane-title" data-field="key" aria-label="Name" value="${escapeHtml(editable.key)}" placeholder="untitled-secret" />`;
 }
 
 function renderNode(node, isFirst = false, path = []) {
@@ -694,6 +736,7 @@ function renderNode(node, isFirst = false, path = []) {
 }
 
 function render() {
+  clearTimeout(categoryHoverTimer);
   const notice = state.notice ? `<div class="workspace-notice" role="alert">${escapeHtml(state.notice)}</div>` : '';
   app.innerHTML = `<div class="workspace-shell">${renderAppNav({ activeTab: state.tab })}${notice}<main class="workspace-main ${state.root ? 'has-pane' : ''}">${renderSidebar()}<div class="editor-column"><section class="editor-area">${state.root ? renderNode(state.root, true) : '<div class="empty-state">Select or create something from the sidebar.</div>'}</section></div></main></div>`;
   app.querySelectorAll('[data-project-settings]').forEach((container) => {
@@ -709,6 +752,7 @@ function render() {
 }
 
 function selectSidebarCategory(tab, expand = false) {
+  clearTimeout(categoryHoverTimer);
   if (!VALID_TABS.includes(tab) || (tab === state.tab && !(expand && state.sidebarCollapsed))) return;
   if (expand) state.sidebarCollapsed = false;
   state.tab = tab;
@@ -912,7 +956,17 @@ app.addEventListener('mouseover', (event) => {
   const navItem = event.target.closest('[data-nav-tab]');
   if (!navItem || navItem.contains(event.relatedTarget)) return;
   const tab = navItem.dataset.navTab;
-  if (VALID_TABS.includes(tab)) selectSidebarCategory(tab);
+  clearTimeout(categoryHoverTimer);
+  if (VALID_TABS.includes(tab)) {
+    categoryHoverTimer = setTimeout(() => {
+      if (navItem.isConnected && navItem.matches(':hover')) selectSidebarCategory(tab);
+    }, 200);
+  }
+});
+
+app.addEventListener('mouseout', (event) => {
+  const navItem = event.target.closest('[data-nav-tab]');
+  if (navItem && !navItem.contains(event.relatedTarget)) clearTimeout(categoryHoverTimer);
 });
 
 app.addEventListener('click', async (event) => {
@@ -930,6 +984,18 @@ app.addEventListener('click', async (event) => {
     openItem('project-settings', { id: target.dataset.project, project: target.dataset.project, category: state.tab });
     return;
   }
+  if (action === 'rename-item') {
+    const item = itemById(target.dataset.id);
+    if (item && !item._review && state.tab !== 'activity') {
+      state.sidebarRename = { tab: state.tab, item: clone(item), value: String(item[['storage', 'secrets'].includes(state.tab) ? 'key' : 'name'] ?? '') };
+      render();
+      const input = app.querySelector('[data-action="rename-input"]');
+      input?.focus();
+      input?.select();
+    }
+  }
+  if (action === 'save-rename') await renameSidebarItem();
+  if (action === 'cancel-rename' && !state.sidebarRename?.saving) { state.sidebarRename = null; render(); }
   if (action === 'add-item') await addItem();
   if (action === 'export-activity') exportActivityLogs(target.dataset.paneId);
   if (action === 'copy-activity') await copyActivityLogs(target.dataset.paneId, target);
@@ -1005,6 +1071,12 @@ app.addEventListener('click', async (event) => {
   if (action === 'split-pane') splitPane(target.dataset.paneId, target.dataset.dir);
 });
 
+app.addEventListener('keydown', async (event) => {
+  if (event.target.dataset.action !== 'rename-input') return;
+  if (event.key === 'Enter') { event.preventDefault(); await renameSidebarItem(); }
+  if (event.key === 'Escape' && !state.sidebarRename?.saving) { state.sidebarRename = null; render(); }
+});
+
 app.addEventListener('error', (event) => {
   if (event.target instanceof HTMLImageElement && event.target.classList.contains('activity-favicon')) {
     event.target.hidden = true;
@@ -1014,6 +1086,7 @@ app.addEventListener('error', (event) => {
 app.addEventListener('input', (event) => {
   if (handleCallerPreviewEvent(event)) return;
   const target = event.target;
+  if (target.dataset.action === 'rename-input') { state.sidebarRename.value = target.value; return; }
   if (target.dataset.action === 'search') {
     state.search = target.value;
     render();
@@ -1074,7 +1147,9 @@ app.addEventListener('input', (event) => {
       if (['secret', 'storage'].includes(node?.pane.type)) {
         const title = app.querySelector(`.pane-title[data-pane-id="${target.dataset.paneId}"]`);
         const usage = app.querySelector(`[data-usage-for="${target.dataset.paneId}"]`);
-        if (title) title.textContent = target.value || (node.pane.type === 'storage' ? 'untitled-key' : 'untitled-secret');
+        if (title) title.value = target.value;
+        const key = app.querySelector(`[data-testid="pane-key"][data-pane-id="${target.dataset.paneId}"]`);
+        if (key) key.value = target.value;
         if (usage) usage.value = itemUsageExample(node.pane.type, node.pane.editable);
       }
     }
@@ -1100,6 +1175,7 @@ window.addEventListener('baah-pending-batches-updated', async () => {
 });
 
 window.addEventListener('hashchange', () => {
+  clearTimeout(categoryHoverTimer);
   state.tab = currentTabFromHash();
   state.search = '';
   state.sidebarCollapsed = false;
