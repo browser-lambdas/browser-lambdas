@@ -10,16 +10,41 @@ issues = "{constants.repo}/issues"
 new = "{constants.repo}/issues/new?title={title}&body={description}"
 
 [bl.bump]
-hint = "Bump a package version only when all changes are committed"
+hint = "Bump a version, update its changelog, and commit the release"
 args = [
   { name = "package", enum = { ref = "constants.bump_packages" } },
   { name = "version", enum = { ref = "constants.bump_versions" } },
+  { name = "note" },
 ]
 run = '''
-bump_status=$(git status --porcelain --untracked-files=all) || exit 1
+set -e
+bump_package="${1:?Missing package}"
+bump_type="${2:?Missing version type}"
+bump_note="${3:?Missing release note}"
+case "$bump_package" in
+  extension|cli) ;;
+  *) echo "Invalid package: $bump_package" >&2; exit 1 ;;
+esac
+case "$bump_type" in
+  major) bump_header="#" ;;
+  minor) bump_header="##" ;;
+  patch) bump_header="###" ;;
+  *) echo "Invalid version type: $bump_type" >&2; exit 1 ;;
+esac
+bump_status=$(git status --porcelain --untracked-files=all)
 if [ -n "$bump_status" ]; then
   echo "Uncommitted changes. Commit or remove them before bumping the version." >&2
   exit 1
 fi
-cd "$1" && npm version "$2" --no-git-tag-version
+cd "$bump_package"
+npm version "$bump_type" --no-git-tag-version
+bump_version=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
+bump_changelog=$(mktemp CHANGELOG.md.XXXXXX)
+{
+  printf '%s %s\n\n- %s\n\n' "$bump_header" "$bump_version" "$bump_note"
+  if [ -f CHANGELOG.md ]; then cat CHANGELOG.md; fi
+} > "$bump_changelog"
+mv "$bump_changelog" CHANGELOG.md
+git add -- package.json package-lock.json CHANGELOG.md
+git commit -m "bump $bump_package v$bump_version" --only -- package.json package-lock.json CHANGELOG.md
 '''
