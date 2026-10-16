@@ -32,7 +32,7 @@ jobs:
       - name: Build website
         run: bash web/build.sh
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: web
       - name: Deploy to GitHub Pages
