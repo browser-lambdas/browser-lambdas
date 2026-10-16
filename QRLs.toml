@@ -6,3 +6,9 @@ issues = "{constants.repo}/issues"
 
 [bl.issue]
 new = "{constants.repo}/issues/new?title={title}&body={description}"
+
+[bl.bump.extension.patch]
+hint = "Bump the extension patch version without a Git commit or tag"
+run = '''
+cd extension && npm version patch --no-git-tag-version
+'''

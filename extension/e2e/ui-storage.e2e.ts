@@ -162,7 +162,7 @@ test('storage policies preserve JSON values, validate patterns and show safe usa
 	expect(saved.urlPatterns).toEqual(['https://example.com/*']);
 	await expect(page.getByRole('button', { name: /^Copy / })).toHaveCount(0);
 	await page.getByTestId('pane-key').fill('renamed');
-	await expect(page.getByTestId('pane-title')).toHaveText('renamed');
+	await expect(page.getByTestId('pane-title')).toHaveValue('renamed');
 	await page.getByTestId('pane-value').fill('{not JSON');
 	await page.getByTestId('pane-save').click();
 	await expect.poll(() => page.evaluate(async () => JSON.parse((await chrome.storage.local.get('local_storage_key_storage')).local_storage_key_storage)[0].value)).toBe('{not JSON');

@@ -110,3 +110,61 @@ test('hover preserves the editor draft and opens an item from the hovered catego
 	await expect(page.getByTestId('pane-value')).toHaveValue('stored value');
 	await expect(page.locator('[data-pane-type=storage]')).toBeVisible();
 });
+
+for (const tab of ['functions', 'storage', 'secrets', 'triggers', 'styles']) {
+	test(`${tab} can be renamed in the sidebar`, async ({ page, extensionId }) => {
+		await page.goto(`chrome-extension://${extensionId}/workspace.html#${tab}`);
+		await page.evaluate(() => chrome.storage.local.clear());
+		await page.reload();
+		await page.getByTestId(`sidebar-${tab}-add`).click();
+		const title = page.getByTestId('pane-title');
+		const original = await title.inputValue();
+		if (tab === 'functions') await page.getByLabel('Code', { exact: true }).fill('unsaved code');
+		const row = page.getByTestId(`sidebar-${tab}-item`).first();
+		await row.hover();
+		await row.getByRole('button', { name: 'Rename', exact: true }).click();
+		const input = page.getByRole('textbox', { name: 'New name', exact: true });
+		await input.fill('cancelled');
+		await input.press('Escape');
+		await expect(title).toHaveValue(original);
+		await row.hover();
+		await row.getByRole('button', { name: 'Rename', exact: true }).click();
+		await input.fill('');
+		await input.press('Enter');
+		await expect(page.getByRole('alert')).toHaveText('Enter a name.');
+		await input.fill(`renamed-${tab}`);
+		await input.press('Enter');
+		await expect(row).toHaveText(`renamed-${tab}`);
+		await expect(title).toHaveValue(`renamed-${tab}`);
+		if (tab === 'functions') await expect(page.getByLabel('Code', { exact: true })).toHaveValue('unsaved code');
+		if (['storage', 'secrets'].includes(tab)) {
+			await title.fill(`footer-${tab}`);
+			await page.getByTestId('pane-save').click();
+			await expect(row).toHaveText(`footer-${tab}`);
+		}
+		await page.reload();
+		await expect(row).toHaveText(`${['storage', 'secrets'].includes(tab) ? 'footer' : 'renamed'}-${tab}`);
+		await page.screenshot({ path: `/private/tmp/workspace-rename-${tab}.png` });
+	});
+}
+
+
+test('category hover waits 200ms and cancels when the pointer leaves', async ({ page, extensionId }) => {
+	await page.goto(`chrome-extension://${extensionId}/workspace.html#storage`);
+	await expect(page.getByTestId('sidebar-storage-add')).toBeVisible();
+	await page.clock.install();
+	const functions = page.getByRole('link', { name: 'Functions', exact: true });
+	await functions.hover();
+	await page.clock.runFor(199);
+	await expect(page).toHaveURL(/#storage$/);
+	await page.locator('.editor-area').hover();
+	await page.clock.runFor(250);
+	await expect(page).toHaveURL(/#storage$/);
+	await functions.hover();
+	await page.clock.runFor(200);
+	await expect(page).toHaveURL(/#functions$/);
+	await page.getByRole('link', { name: 'Secrets', exact: true }).click();
+	await expect(page).toHaveURL(/#secrets$/);
+	await page.clock.runFor(250);
+	await expect(page).toHaveURL(/#secrets$/);
+});
