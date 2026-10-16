@@ -42,6 +42,8 @@ Pending batches live in extension storage. `pendingUpdates.js` applies reviewed 
 
 The workspace keeps view state in `workspace.js`. Pane layout, code editing, review rendering and HTML escaping have dedicated modules alongside it; look there before adding another implementation.
 
+Project settings (`projectSettings.js`) and storage/secret caller restrictions (`callerRestrictions.js`) are interactive UI previews. Their drafts live only in page memory, are labelled as unapplied, and do not change saved records, sync behavior or access enforcement.
+
 The website reuses the argument parser and shell UI through its build script. Changes to those sources need consideration of both the extension and demo.
 
 ## Compatibility map

@@ -8,6 +8,8 @@ import { newLambda as makeLambda, newStorageItem as makeStorage, newSecret as ma
 import * as accessPolicy from '../../shared/accessPolicy.js';
 import { sameStorageRecord } from '../../shared/storageRecords.js';
 import { functionUsageExample } from '../../shared/functionUsage.js';
+import { mountProjectSettings, updateProjectSettingsGlobals } from './projectSettings.js';
+import { renderCallerRestrictions, handleCallerPreviewEvent } from './callerRestrictions.js';
 
 const VALID_TABS = ['functions', 'storage', 'triggers', 'secrets', 'styles', 'activity'];
 const PANE_TYPE_BY_TAB = {
@@ -51,6 +53,7 @@ const state = {
   projectDeleteConfirmation: null,
   pendingBatches: [],
   baahPollChanges: true,
+  baahRequireReview: true,
   allowMainWorldSecrets: false,
   allowMainWorldStorage: false,
   allowMainWorldFunctions: false,
@@ -393,6 +396,7 @@ function renderAccessControls(node) {
     ${type === 'trigger' ? '' : `
       ${accessToggle(node, 'Only allow on specific URLs', 'access-allowlist', policy.urlAllowlistEnabled, `data-testid="${category}-url-allowlist"`)}
       <label class="form-field url-allowlist-area ${policy.urlAllowlistEnabled ? '' : 'muted'}"><span class="security-help">One glob or /regular expression/ per line. ${policy.urlAllowlistEnabled ? 'An empty allowlist blocks access on every page.' : 'URL filtering is off. Saved patterns are kept for later.'}</span><textarea class="form-textarea security-patterns" aria-label="URL allowlist patterns" rows="8" wrap="off" data-pane-id="${node.id}" data-field="urlPatterns" data-testid="${category}-url-patterns" spellcheck="false" placeholder="https://*.example.com/*" ${policy.urlAllowlistEnabled ? '' : 'disabled'}>${escapeHtml(policy.urlPatterns.join('\n'))}</textarea></label>`}
+    ${['storage', 'secret'].includes(type) ? renderCallerRestrictions(type, editable.id) : ''}
   </section>`;
 }
 
@@ -556,7 +560,7 @@ function renderProjectHeader(project, canDelete = true) {
   if (pending) {
     return `<div class="project-confirm"><div class="project-confirm-title">Delete ${escapeHtml(project)}?</div><input class="project-confirm-input" data-action="project-confirm-input" data-project="${escapeHtml(project)}" value="${escapeHtml(state.projectDeleteConfirmation.value)}" placeholder="type ${escapeHtml(project)}" aria-label="Type ${escapeHtml(project)} to confirm deletion" /><div class="project-confirm-actions"><button class="project-confirm-button danger" type="button" data-action="confirm-delete-project" data-project="${escapeHtml(project)}" ${state.projectDeleteConfirmation.value === project ? '' : 'disabled'}>Delete</button><button class="project-confirm-button" type="button" data-action="cancel-delete-project">Cancel</button></div></div>`;
   }
-  return `<div class="project-title-row"><h3 class="project-title">${escapeHtml(project)}</h3>${canDelete ? `<button class="project-delete" type="button" data-action="request-delete-project" data-project="${escapeHtml(project)}" title="Delete project ${escapeHtml(project)}" aria-label="Delete project ${escapeHtml(project)}">×</button>` : ''}</div>`;
+  return `<div class="project-title-row"><h3 class="project-title">${escapeHtml(project)}</h3>${canDelete ? `<div class="project-header-actions"><button class="project-settings-button icon-button" type="button" data-action="project-settings" data-project="${escapeHtml(project)}" title="Settings for ${escapeHtml(project)}" aria-label="Settings for ${escapeHtml(project)}">${lucideIcon('settings')}</button><button class="project-delete" type="button" data-action="request-delete-project" data-project="${escapeHtml(project)}" title="Delete project ${escapeHtml(project)}" aria-label="Delete project ${escapeHtml(project)}">×</button></div>` : ''}</div>`;
 }
 
 function renderSidebarItems(items, tab) {
@@ -617,6 +621,7 @@ async function copyActivityLogs(paneId, button) {
 
 function editorFor(node) {
   const { type, editable } = node.pane;
+  if (type === 'project-settings') return `<div class="project-settings-pane" data-project-settings="${node.id}"></div>`;
   if (type === 'review') return renderReviewPanel(editable.batch);
   if (type === 'activity') {
     const logs = filteredActivityLogs(editable).slice().reverse();
@@ -647,6 +652,7 @@ function editorFor(node) {
 
 function paneTitle(node) {
   const { type, editable } = node.pane;
+  if (type === 'project-settings') return `<span class="pane-title readonly">${escapeHtml(editable.project)} · Settings</span>`;
   if (type === 'activity') {
     const favicon = editable.tabId != null && editable.favicon
       ? `<img class="activity-favicon" src="${escapeHtml(editable.favicon)}" alt="" />`
@@ -674,13 +680,13 @@ function renderNode(node, isFirst = false, path = []) {
   return `<section class="pane-frame ${activeChrome ? 'active' : ''} ${isFirst ? 'first' : ''}" data-action="activate-pane" data-pane-id="${node.id}" data-testid="pane">
     <div class="pane-content ${node.pane.expandedEditor ? (['lambda', 'storage'].includes(node.pane.type) ? 'editor-maximized' : 'security-hidden') : ''} ${activeChrome ? 'active' : ''}" data-testid="pane-content" data-pane-id="${node.id}" data-pane-type="${node.pane.type}">${editorFor(node)}</div>
     <footer class="pane-footer ${activeChrome ? 'active' : ''}">
-      <div class="pane-identity"><span data-testid="pane-category-icon">${lucideIcon(node.pane.type === 'review' ? 'refreshCw' : APP_CATEGORY_ICONS[tabForType(node.pane.type)])}</span>${paneTitle(node)}</div>
+      <div class="pane-identity"><span data-testid="pane-category-icon">${lucideIcon(node.pane.type === 'project-settings' ? 'settings' : node.pane.type === 'review' ? 'refreshCw' : APP_CATEGORY_ICONS[tabForType(node.pane.type)])}</span>${paneTitle(node)}</div>
       <div class="pane-actions">
         ${['lambda', 'storage', 'secret', 'trigger'].includes(node.pane.type) ? paneSettingsButton(node) : ''}
         <button class="icon-button" data-action="split-pane" data-pane-id="${node.id}" data-dir="horizontal" title="Split right" aria-label="Split right">${lucideIcon('splitHorizontal')}</button>
         <button class="icon-button" data-action="split-pane" data-pane-id="${node.id}" data-dir="vertical" title="Split down" aria-label="Split down">${lucideIcon('splitVertical')}</button>
         ${node.pane.type === 'style' ? `<button class="icon-button" data-action="set-default-style" data-pane-id="${node.id}" title="${node.pane.editable.selected ? 'Unset default shell style' : 'Set as default shell style'}" aria-label="${node.pane.editable.selected ? 'Unset default shell style' : 'Set as default shell style'}">${lucideIcon('star')}</button>` : ''}
-        ${['review', 'activity'].includes(node.pane.type) ? '' : `<button class="icon-button" data-action="save-pane" data-testid="pane-save" data-pane-id="${node.id}" title="Save" aria-label="Save">${lucideIcon('save')}</button><button class="icon-button" data-action="delete-pane" data-testid="pane-delete" data-pane-id="${node.id}" title="Delete" aria-label="Delete">${lucideIcon('trash')}</button>`}
+        ${['review', 'activity', 'project-settings'].includes(node.pane.type) ? '' : `<button class="icon-button" data-action="save-pane" data-testid="pane-save" data-pane-id="${node.id}" title="Save" aria-label="Save">${lucideIcon('save')}</button><button class="icon-button" data-action="delete-pane" data-testid="pane-delete" data-pane-id="${node.id}" title="Delete" aria-label="Delete">${lucideIcon('trash')}</button>`}
         <button class="icon-button" data-action="close-pane" data-pane-id="${node.id}" title="Close" aria-label="Close">${lucideIcon('x')}</button>
       </div>
     </footer>
@@ -690,6 +696,16 @@ function renderNode(node, isFirst = false, path = []) {
 function render() {
   const notice = state.notice ? `<div class="workspace-notice" role="alert">${escapeHtml(state.notice)}</div>` : '';
   app.innerHTML = `<div class="workspace-shell">${renderAppNav({ activeTab: state.tab })}${notice}<main class="workspace-main ${state.root ? 'has-pane' : ''}">${renderSidebar()}<div class="editor-column"><section class="editor-area">${state.root ? renderNode(state.root, true) : '<div class="empty-state">Select or create something from the sidebar.</div>'}</section></div></main></div>`;
+  app.querySelectorAll('[data-project-settings]').forEach((container) => {
+    const node = findPane(state.root, container.dataset.projectSettings);
+    node.pane.settingsView ||= { category: node.pane.editable.category };
+    mountProjectSettings(container, { project: node.pane.editable.project, view: node.pane.settingsView, globals: {
+      allowMainWorldFunctions: state.allowMainWorldFunctions,
+      allowMainWorldTriggers: state.allowMainWorldTriggers,
+      baahPollChanges: state.baahPollChanges,
+      baahRequireReview: state.baahRequireReview
+    } });
+  });
 }
 
 function selectSidebarCategory(tab, expand = false) {
@@ -728,6 +744,7 @@ function splitPane(id, direction) {
   if (!target) return;
   const freshItem = clone(target.pane.editable);
   const fresh = createPane(target.pane.type, freshItem);
+  if (target.pane.settingsView) fresh.pane.settingsView = clone(target.pane.settingsView);
   if (['storage', 'lambda', 'trigger'].includes(target.pane.type)) fresh.pane = clone(target.pane);
   if (['lambda', 'storage', 'secret', 'trigger'].includes(target.pane.type)) fresh.pane.expandedEditor = true;
   state.root = splitNode(state.root, id, direction, fresh);
@@ -899,6 +916,7 @@ app.addEventListener('mouseover', (event) => {
 });
 
 app.addEventListener('click', async (event) => {
+  if (handleCallerPreviewEvent(event)) return;
   const category = event.target.closest('[data-nav-tab]');
   if (category && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
     event.preventDefault();
@@ -908,6 +926,10 @@ app.addEventListener('click', async (event) => {
   const target = event.target.closest('[data-action]');
   if (!target) return;
   const action = target.dataset.action;
+  if (action === 'project-settings') {
+    openItem('project-settings', { id: target.dataset.project, project: target.dataset.project, category: state.tab });
+    return;
+  }
   if (action === 'add-item') await addItem();
   if (action === 'export-activity') exportActivityLogs(target.dataset.paneId);
   if (action === 'copy-activity') await copyActivityLogs(target.dataset.paneId, target);
@@ -990,6 +1012,7 @@ app.addEventListener('error', (event) => {
 }, true);
 
 app.addEventListener('input', (event) => {
+  if (handleCallerPreviewEvent(event)) return;
   const target = event.target;
   if (target.dataset.action === 'search') {
     state.search = target.value;
@@ -1058,6 +1081,8 @@ app.addEventListener('input', (event) => {
   }
 });
 
+app.addEventListener('change', handleCallerPreviewEvent);
+
 app.addEventListener('scroll', (event) => {
   if (!event.target.classList?.contains('code-editor')) return;
   const gutter = event.target.closest('.code-shell')?.querySelector('.line-numbers');
@@ -1084,6 +1109,7 @@ window.addEventListener('hashchange', () => {
 (async () => {
   state.tab = currentTabFromHash();
   state.baahPollChanges = await getBaahPollChanges();
+  state.baahRequireReview = await getBaahRequireReview();
   syncBaahPolling();
   state.lambdas = await getLambdas();
   try { state.storageItems = await getStorageItems(); }
@@ -1108,6 +1134,14 @@ window.addEventListener('hashchange', () => {
 })();
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local') {
+    const globals = {};
+    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS]) globals.allowMainWorldFunctions = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS].newValue === true;
+    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS]) globals.allowMainWorldTriggers = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS].newValue === true;
+    if (changes.local_storage_key_baah_require_review) globals.baahRequireReview = state.baahRequireReview = changes.local_storage_key_baah_require_review.newValue !== false;
+    if (changes.local_storage_key_baah_poll_changes) globals.baahPollChanges = state.baahPollChanges = changes.local_storage_key_baah_poll_changes.newValue !== false;
+    updateProjectSettingsGlobals(globals);
+  }
   if (area === 'local' && changes.activityLogs) { state.activityLogs = changes.activityLogs.newValue || []; if (state.tab === 'activity') render(); }
   if (area === 'local' && changes[LOCAL_STORAGE_KEY_STORAGE] && accessPolicy) void refreshStorage();
   if (area === 'local' && (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE])) {
