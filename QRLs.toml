@@ -1,5 +1,7 @@
 [constants]
 repo = "https://github.com/browser-lambdas/browser-lambdas"
+bump_packages = ["extension", "cli"]
+bump_versions = ["patch", "minor", "major"]
 
 [bl]
 issues = "{constants.repo}/issues"
@@ -7,8 +9,17 @@ issues = "{constants.repo}/issues"
 [bl.issue]
 new = "{constants.repo}/issues/new?title={title}&body={description}"
 
-[bl.bump.extension.patch]
-hint = "Bump the extension patch version without a Git commit or tag"
+[bl.bump]
+hint = "Bump a package version only when all changes are committed"
+args = [
+  { name = "package", enum = { ref = "constants.bump_packages" } },
+  { name = "version", enum = { ref = "constants.bump_versions" } },
+]
 run = '''
-cd extension && npm version patch --no-git-tag-version
+bump_status=$(git status --porcelain --untracked-files=all) || exit 1
+if [ -n "$bump_status" ]; then
+  echo "Uncommitted changes. Commit or remove them before bumping the version." >&2
+  exit 1
+fi
+cd "$1" && npm version "$2" --no-git-tag-version
 '''
