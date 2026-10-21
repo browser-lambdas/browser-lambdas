@@ -2,14 +2,16 @@ import { contains, countPanes, findPane, splitNode, removeNode, normalizeSizes }
 import { escapeHtml } from './html.js';
 import { codeLineNumbers, highlightJavaScript, syncCodeHighlight, syncLineNumbers } from './codeEditor.js';
 import { renderReviewPanel } from './reviewView.js';
-import { applyPendingItemToCollections } from './pendingUpdates.js';
+import { applyPendingItemToCollections, assertPendingBatchAllowed } from './pendingUpdates.js';
 import { DEFAULT_STYLE_CSS } from './defaultStyle.js';
 import { newLambda as makeLambda, newStorageItem as makeStorage, newSecret as makeSecret, newTrigger as makeTrigger, newStyle as makeStyle } from '../../shared/records.js';
 import * as accessPolicy from '../../shared/accessPolicy.js';
 import { sameStorageRecord } from '../../shared/storageRecords.js';
 import { functionUsageExample } from '../../shared/functionUsage.js';
 import { mountProjectSettings, updateProjectSettingsGlobals } from './projectSettings.js';
-import { renderCallerRestrictions, handleCallerPreviewEvent } from './callerRestrictions.js';
+import { renderCallerRestrictions, handleCallerRestrictionsEvent } from './callerRestrictions.js';
+import { PROJECT_SETTINGS_KEY, getProjectSettings, normalizeProjectSettings, getProjectCategorySettings } from '../../shared/projectPolicy.js';
+import { settingSource } from '../shared/settingSource.js';
 
 const VALID_TABS = ['functions', 'storage', 'triggers', 'secrets', 'styles', 'activity'];
 const PANE_TYPE_BY_TAB = {
@@ -53,12 +55,12 @@ const state = {
   revealedSecretPanes: new Set(),
   projectDeleteConfirmation: null,
   pendingBatches: [],
+  projectSettings: {},
   baahPollChanges: true,
   baahRequireReview: true,
   allowMainWorldSecrets: false,
   allowMainWorldStorage: false,
   allowMainWorldFunctions: false,
-  allowMainWorldTriggers: false,
   sidebarRename: null,
   notice: ''
 };
@@ -122,8 +124,8 @@ function itemLabel(item, tab = state.tab) {
 }
 
 function draftAccessPolicy(type, item) {
-  const policy = type === 'storage' ? accessPolicy.normalizeStoragePolicy(item) : accessPolicy.normalizeAccessPolicy(item);
-  return type === 'trigger' ? { allowedWorlds: policy.allowedWorlds } : policy;
+  if (type === 'trigger') return {};
+  return type === 'storage' ? accessPolicy.normalizeStoragePolicy(item) : accessPolicy.normalizeAccessPolicy(item);
 }
 
 function createPane(type, item) {
@@ -176,7 +178,7 @@ function syncPanes(node, type, updated) {
   if (!node) return;
   if (node.type === 'pane') {
     if (node.pane.type === type && node.pane.item.id === updated.id) {
-      if (['lambda', 'trigger'].includes(type) && node.pane.changed && !sameStorageRecord(node.pane.editable, updated)) return;
+      if (['lambda', 'trigger', 'project-settings'].includes(type) && node.pane.changed && !sameStorageRecord(node.pane.editable, updated)) return;
       node.pane.item = updated;
       node.pane.editable = ['lambda', 'trigger'].includes(type) ? { ...clone(updated), ...draftAccessPolicy(type, updated) } : clone(updated);
       node.pane.changed = false;
@@ -186,14 +188,37 @@ function syncPanes(node, type, updated) {
   node.children.forEach((child) => syncPanes(child, type, updated));
 }
 
+async function autosaveProjectSettings(pane) {
+  if (pane.saving) return;
+  pane.saving = true;
+  while (pane.changed) {
+    const submitted = clone(pane.editable);
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'WORKSPACE_PROJECT_SETTINGS_UPDATE', project: submitted.project, settings: submitted.settings, expected: pane.item.settings });
+      if (!result?.success) throw new Error(result?.error || 'Project settings could not be saved.');
+      state.projectSettings = { ...state.projectSettings, [submitted.project]: result.settings };
+      pane.item = { ...submitted, settings: result.settings };
+      pane.changed = !sameStorageRecord(pane.editable.settings, submitted.settings);
+      pane.error = '';
+    } catch (error) {
+      if (!sameStorageRecord(pane.editable.settings, submitted.settings)) continue;
+      pane.error = error.message || 'Project settings could not be saved. Please try again.';
+      break;
+    }
+  }
+  pane.saving = false;
+  renderPreservingFocus();
+}
+
 async function savePane(id) {
   const node = findPane(state.root, id);
   if (!node) return;
   const { type, editable } = node.pane;
+  if (type === 'project-settings') return autosaveProjectSettings(node.pane);
   let items = getItems(tabForType(type));
   if (['storage', 'secret', 'lambda', 'trigger'].includes(type)) {
     try { accessPolicy.validateAccessPolicy(type === 'trigger' ? { ...editable, urlPatterns: editable.patterns, urlAllowlistEnabled: true } : editable); }
-    catch { node.pane.error = 'An allowed page pattern is invalid. Check the regular expression syntax.'; render(); return; }
+    catch { node.pane.error = 'Check the allowed page patterns and caller name lists.'; render(); return; }
     node.pane.error = '';
   }
   if (type === 'storage') {
@@ -216,6 +241,16 @@ async function savePane(id) {
       render();
       return;
     }
+  }
+  if (type === 'secret') {
+    items = await getSecrets();
+    const current = items.find((item) => item.id === node.pane.item.id);
+    if (!current || !sameStorageRecord(current, node.pane.item)) {
+      node.pane.error = 'This secret changed elsewhere. Reopen it before saving.';
+      render();
+      return;
+    }
+    Object.assign(editable, accessPolicy.normalizeCallerRestrictions(editable));
   }
   if (type === 'lambda') {
     // CLI pushes may update code while this permission draft is open.
@@ -294,6 +329,7 @@ function renderPreservingFocus() {
   const action = active?.dataset.action;
   const world = active?.dataset.world;
   const operation = active?.dataset.operation;
+  const projectField = active?.dataset.projectField;
   const start = active?.selectionStart;
   const end = active?.selectionEnd;
   const expanded = [...app.querySelectorAll('.access-controls details[open]')].map((el) => el.closest('.pane-content').dataset.paneId);
@@ -304,7 +340,7 @@ function renderPreservingFocus() {
     if (details) details.open = true;
   }
   const next = [...app.querySelectorAll('input, textarea, button, select')].find((el) =>
-    el.dataset.paneId === paneId && el.dataset.field === field && el.dataset.action === action && el.dataset.world === world && el.dataset.operation === operation);
+    el.dataset.paneId === paneId && el.dataset.field === field && el.dataset.action === action && el.dataset.world === world && el.dataset.operation === operation && el.dataset.projectField === projectField);
   if (next && active !== document.body) {
     next.focus({ preventScroll: true });
     if (typeof start === 'number' && next.setSelectionRange) next.setSelectionRange(start, end);
@@ -381,24 +417,47 @@ function displayStorageValue(value) {
 }
 
 function accessToggle(node, label, action, checked, attributes = '', disabled = false) {
-  return `<label class="access-toggle-row ${disabled ? 'disabled' : ''}"><span>${label}</span><input class="access-switch" type="checkbox" role="switch" data-action="${action}" data-pane-id="${node.id}" ${attributes} ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}></label>`;
+  return `<label class="access-toggle-row ${disabled ? 'disabled' : ''}"><span>${label}</span><input class="access-switch" type="checkbox" role="switch" data-action="${action}" data-pane-id="${node.id}" ${attributes} ${checked && !disabled ? 'checked' : ''} ${disabled ? 'disabled' : ''}></label>`;
+}
+
+function projectSettingLink(item, category, setting) {
+  return `<button class="security-project-link" type="button" data-action="project-settings" data-project="${escapeHtml(item.project || 'default')}" data-project-category="${category}" data-project-setting="${setting}">project settings</button>`;
 }
 
 function renderAccessControls(node) {
   const { type, editable } = node.pane;
-  const [setting, category] = { storage: ['allowMainWorldStorage', 'storage'], secret: ['allowMainWorldSecrets', 'secret'], lambda: ['allowMainWorldFunctions', 'function'], trigger: ['allowMainWorldTriggers', 'trigger'] }[type];
-  const enabled = state[setting];
+  if (type === 'trigger') {
+    const project = getProjectCategorySettings(state.projectSettings, editable.project, 'triggers', state);
+    return `<section class="access-controls" data-testid="trigger-security"><h3>Automatic execution</h3>
+      ${accessToggle(node, 'Run automatically', 'trigger-enabled', project.enabled && editable.enabled !== false, '', !project.enabled)}
+      ${settingSource({ value: project.enabled && editable.enabled !== false, explicit: Object.hasOwn(editable, 'enabled'),
+        from: !project.enabled ? projectSettingLink(editable, 'triggers', 'enabled') : '',
+        controlled: !project.enabled ? projectSettingLink(editable, 'triggers', 'enabled') : '' })}
+      <p class="security-help">Function permissions apply to every command. See ${projectSettingLink(editable, 'triggers', 'enabled')}.</p>
+    </section>`;
+  }
+  const [setting, category] = { storage: ['allowMainWorldStorage', 'storage'], secret: ['allowMainWorldSecrets', 'secret'], lambda: ['allowMainWorldFunctions', 'function'] }[type];
+  const projectCategory = type === 'lambda' ? 'functions' : null;
+  const projectPolicy = projectCategory ? getProjectCategorySettings(state.projectSettings, editable.project, projectCategory, state) : null;
+  const enabled = projectPolicy ? projectPolicy.enabled && projectPolicy.mainWorld : state[setting];
   const policy = type === 'storage' ? accessPolicy.normalizeStoragePolicy(editable) : accessPolicy.normalizeAccessPolicy(editable);
   const execution = accessPolicy.functionExecutionOptions(editable, enabled);
+  if (projectPolicy && (!projectPolicy.enabled || !projectPolicy.userWorld)) execution.worlds = execution.worlds.filter((world) => world !== 'USER_SCRIPT');
+  const inheritedWorld = projectPolicy?.mode || 'USER_SCRIPT';
+  const selectedWorld = editable.world || inheritedWorld;
   return `<section class="access-controls" data-testid="${category}-security"><h3>Security</h3>
-    ${accessToggle(node, type === 'storage' ? 'Enable in user world' : 'Allow execution in user world', 'access-world', policy.allowedWorlds.includes('user_scripts'), 'data-world="user_scripts"')}
+    ${accessToggle(node, type === 'storage' ? 'Enable in user world' : 'Allow execution in user world', 'access-world', policy.allowedWorlds.includes('user_scripts'), 'data-world="user_scripts"', projectPolicy && (!projectPolicy.enabled || !projectPolicy.userWorld))}
+    ${projectPolicy && !projectPolicy.userWorld ? settingSource({ value: false, controlled: projectSettingLink(editable, 'functions', 'userWorld') }) : ''}
     ${accessToggle(node, type === 'storage' ? 'Enable in main world' : 'Allow execution in main world', 'access-world', policy.allowedWorlds.includes('main'), 'data-world="main"', !enabled)}
-    <p class="security-help">Main-world access is dangerous: page scripts can interfere with execution and access exposed data. Manage this category’s main-world access in <a href="./settings.html#main-world-${tabForType(type)}" target="_blank" rel="noopener">General Settings</a>.${enabled ? '' : ' Currently disabled globally.'}</p>
-    ${type === 'lambda' ? `<label class="access-select-row" for="world-${node.id}"><span>Default execution world:</span><select id="world-${node.id}" data-testid="pane-world" data-pane-id="${node.id}" data-field="world" ${execution.selected ? '' : 'disabled'}>${execution.selected ? '' : '<option value="" selected>Disabled</option>'}${[['USER_SCRIPT', 'User world'], ['MAIN', 'Main world']].map(([value, label]) => `<option value="${value}" ${execution.selected === value ? 'selected' : ''} ${execution.worlds.includes(value) ? '' : 'disabled'}>${label}</option>`).join('')}</select></label>` : ''}
-    ${type === 'trigger' ? '' : `
-      ${accessToggle(node, 'Only allow on specific URLs', 'access-allowlist', policy.urlAllowlistEnabled, `data-testid="${category}-url-allowlist"`)}
-      <label class="form-field url-allowlist-area ${policy.urlAllowlistEnabled ? '' : 'muted'}"><span class="security-help">One glob or /regular expression/ per line. ${policy.urlAllowlistEnabled ? 'An empty allowlist blocks access on every page.' : 'URL filtering is off. Saved patterns are kept for later.'}</span><textarea class="form-textarea security-patterns" aria-label="URL allowlist patterns" rows="8" wrap="off" data-pane-id="${node.id}" data-field="urlPatterns" data-testid="${category}-url-patterns" spellcheck="false" placeholder="https://*.example.com/*" ${policy.urlAllowlistEnabled ? '' : 'disabled'}>${escapeHtml(policy.urlPatterns.join('\n'))}</textarea></label>`}
-    ${['storage', 'secret'].includes(type) ? renderCallerRestrictions(type, editable.id) : ''}
+    ${!enabled ? settingSource({ value: false, controlled: !projectPolicy || !state[setting] ? `<a href="./settings.html#main-world-${tabForType(type)}" target="_blank" rel="noopener">global settings</a>` : projectSettingLink(editable, 'functions', 'mainWorld') }) : ''}
+    <p class="security-help">Main-world access is dangerous: page scripts can interfere with execution and access exposed data. See <a href="./settings.html#main-world-${tabForType(type)}" target="_blank" rel="noopener">global settings</a>.</p>
+    ${projectPolicy ? `<p class="security-help">Project access rules also apply. See ${projectSettingLink(editable, 'functions', 'userWorld')}.</p>` : ''}
+    ${type === 'lambda' ? `<label class="access-select-row" for="world-${node.id}"><span>Default execution world:</span><select id="world-${node.id}" data-testid="pane-world" data-pane-id="${node.id}" data-field="world" ${execution.worlds.length ? '' : 'disabled title="No execution worlds enabled"'}>
+      ${execution.worlds.length ? `<option value="" ${!editable.world ? 'selected' : ''}>Use project default (${inheritedWorld === 'MAIN' ? 'Main world' : 'User world'}${execution.worlds.includes(inheritedWorld) ? '' : ', disabled'})</option>${[['USER_SCRIPT', 'User world'], ['MAIN', 'Main world']].map(([value, label]) => `<option value="${value}" ${editable.world === value ? 'selected' : ''} ${execution.worlds.includes(value) ? '' : 'disabled'}>${label}${value === selectedWorld && !execution.worlds.includes(value) ? ' (disabled)' : ''}</option>`).join('')}` : '<option value="" selected disabled>Disabled</option>'}
+      </select></label>${execution.worlds.length ? settingSource({ value: selectedWorld, explicit: Boolean(editable.world), from: projectSettingLink(editable, 'functions', 'mode') }) : ''}` : ''}
+      ${accessToggle(node, type === 'lambda' ? 'Only allow execution on specific URLs' : 'Only allow on specific URLs', 'access-allowlist', policy.urlAllowlistEnabled, `data-testid="${category}-url-allowlist"`)}
+      <label class="form-field url-allowlist-area ${policy.urlAllowlistEnabled ? '' : 'muted'}"><span class="security-help">One glob or /regular expression/ per line. ${policy.urlAllowlistEnabled ? type === 'lambda' ? 'An empty list blocks execution on all URLs.' : 'An empty allowlist blocks access on every page.' : 'URL filtering is off. Saved patterns are kept for later.'}</span><textarea class="form-textarea security-patterns" aria-label="URL allowlist patterns" rows="8" wrap="off" data-pane-id="${node.id}" data-field="urlPatterns" data-testid="${category}-url-patterns" spellcheck="false" placeholder="https://*.example.com/*" ${policy.urlAllowlistEnabled ? '' : 'disabled'}>${escapeHtml(policy.urlPatterns.join('\n'))}</textarea></label>
+    ${['storage', 'secret'].includes(type) ? renderCallerRestrictions(node) : ''}
   </section>`;
 }
 
@@ -448,10 +507,11 @@ function groupItemsByProject(items) {
 }
 
 function syncBaahPolling() {
-  if (state.baahPollChanges && !cleanupBaahSync && typeof initBaahSync === 'function') {
+  const enabled = state.baahPollChanges;
+  if (enabled && !cleanupBaahSync && typeof initBaahSync === 'function') {
     cleanupBaahSync = initBaahSync();
   }
-  if (!state.baahPollChanges && cleanupBaahSync) {
+  if (!enabled && cleanupBaahSync) {
     cleanupBaahSync();
     cleanupBaahSync = null;
   }
@@ -597,12 +657,12 @@ async function renameSidebarItem() {
   render();
 }
 
-function renderProjectHeader(project, canDelete = true) {
+function renderProjectHeader(project, canDelete = true, projectKey = project) {
   const pending = state.projectDeleteConfirmation?.project === project;
   if (pending) {
     return `<div class="project-confirm"><div class="project-confirm-title">Delete ${escapeHtml(project)}?</div><input class="project-confirm-input" data-action="project-confirm-input" data-project="${escapeHtml(project)}" value="${escapeHtml(state.projectDeleteConfirmation.value)}" placeholder="type ${escapeHtml(project)}" aria-label="Type ${escapeHtml(project)} to confirm deletion" /><div class="project-confirm-actions"><button class="project-confirm-button danger" type="button" data-action="confirm-delete-project" data-project="${escapeHtml(project)}" ${state.projectDeleteConfirmation.value === project ? '' : 'disabled'}>Delete</button><button class="project-confirm-button" type="button" data-action="cancel-delete-project">Cancel</button></div></div>`;
   }
-  return `<div class="project-title-row"><h3 class="project-title">${escapeHtml(project)}</h3>${canDelete ? `<div class="project-header-actions"><button class="project-settings-button icon-button" type="button" data-action="project-settings" data-project="${escapeHtml(project)}" title="Settings for ${escapeHtml(project)}" aria-label="Settings for ${escapeHtml(project)}">${lucideIcon('settings')}</button><button class="project-delete" type="button" data-action="request-delete-project" data-project="${escapeHtml(project)}" title="Delete project ${escapeHtml(project)}" aria-label="Delete project ${escapeHtml(project)}">×</button></div>` : ''}</div>`;
+  return `<div class="project-title-row"><h3 class="project-title">${escapeHtml(project)}</h3>${canDelete ? `<div class="project-header-actions"><button class="project-settings-button icon-button" type="button" data-action="project-settings" data-project="${escapeHtml(projectKey)}" title="Settings for ${escapeHtml(project)}" aria-label="Settings for ${escapeHtml(project)}">${lucideIcon('settings')}</button><button class="project-delete" type="button" data-action="request-delete-project" data-project="${escapeHtml(project)}" title="Delete project ${escapeHtml(project)}" aria-label="Delete project ${escapeHtml(project)}">×</button></div>` : ''}</div>`;
 }
 
 function renderSidebarItems(items, tab) {
@@ -616,7 +676,7 @@ function renderSidebarItems(items, tab) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([project, projectItems]) => {
       const projectReviews = reviews.filter((review) => review.project === project);
-      return `<section class="project-group">${renderProjectHeader(project, ['functions', 'triggers', 'styles'].includes(tab))}${projectReviews.map((item) => renderItemButton(item, tab)).join('')}${projectItems.map((item) => renderItemButton(item, tab)).join('')}</section>`;
+      return `<section class="project-group">${renderProjectHeader(project, true, projectItems[0]?.project || projectReviews[0]?.project || 'default')}${projectReviews.map((item) => renderItemButton(item, tab)).join('')}${projectItems.map((item) => renderItemButton(item, tab)).join('')}</section>`;
     })
     .join('');
 }
@@ -741,10 +801,12 @@ function render() {
   app.innerHTML = `<div class="workspace-shell">${renderAppNav({ activeTab: state.tab })}${notice}<main class="workspace-main ${state.root ? 'has-pane' : ''}">${renderSidebar()}<div class="editor-column"><section class="editor-area">${state.root ? renderNode(state.root, true) : '<div class="empty-state">Select or create something from the sidebar.</div>'}</section></div></main></div>`;
   app.querySelectorAll('[data-project-settings]').forEach((container) => {
     const node = findPane(state.root, container.dataset.projectSettings);
-    node.pane.settingsView ||= { category: node.pane.editable.category };
-    mountProjectSettings(container, { project: node.pane.editable.project, view: node.pane.settingsView, globals: {
+    const pane = node.pane;
+    pane.settingsView ||= { category: pane.editable.category, setting: pane.editable.setting };
+    mountProjectSettings(container, { project: pane.editable.project, view: pane.settingsView, settings: pane.editable.settings, error: pane.error,
+      onChange: () => { pane.changed = true; pane.error = ''; void autosaveProjectSettings(pane); },
+      onRetry: () => { void autosaveProjectSettings(pane); }, globals: {
       allowMainWorldFunctions: state.allowMainWorldFunctions,
-      allowMainWorldTriggers: state.allowMainWorldTriggers,
       baahPollChanges: state.baahPollChanges,
       baahRequireReview: state.baahRequireReview
     } });
@@ -848,13 +910,16 @@ function syncReviewPanes(node) {
 async function approvePendingBatch(batchId) {
   const batch = state.pendingBatches.find((candidate) => candidate.id === batchId);
   if (!batch) return;
-  const lambdas = await getLambdas();
-  const styles = await getShellThemes();
-  const triggers = await getTriggers();
+  try { await assertPendingBatchAllowed(batch); }
+  catch (error) { state.notice = error.message; render(); return; }
+  const stored = await chrome.storage.local.get(['local_storage_key_lambdas', 'local_storage_key_shellcss', 'local_storage_key_triggers']);
+  const lambdas = JSON.parse(stored.local_storage_key_lambdas || '[]');
+  const styles = JSON.parse(stored.local_storage_key_shellcss || '[]');
+  const triggers = JSON.parse(stored.local_storage_key_triggers || '[]');
   for (const item of batch.items || []) {
     applyPendingItemToCollections(item, lambdas, styles, triggers);
   }
-  await Promise.all([storeLambdas(lambdas), storeShellThemes(styles), storeTriggers(triggers)]);
+  await chrome.storage.local.set({ local_storage_key_lambdas: JSON.stringify(lambdas), local_storage_key_shellcss: JSON.stringify(styles), local_storage_key_triggers: JSON.stringify(triggers) });
   state.pendingBatches = [];
   state.root = pruneReviewPanes(state.root, batchId);
   if (state.activeId && !contains(state.root, state.activeId)) state.activeId = '';
@@ -970,7 +1035,7 @@ app.addEventListener('mouseout', (event) => {
 });
 
 app.addEventListener('click', async (event) => {
-  if (handleCallerPreviewEvent(event)) return;
+  if (handleCallerRestrictionsEvent(event, state.root)) return;
   const category = event.target.closest('[data-nav-tab]');
   if (category && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
     event.preventDefault();
@@ -981,7 +1046,13 @@ app.addEventListener('click', async (event) => {
   if (!target) return;
   const action = target.dataset.action;
   if (action === 'project-settings') {
-    openItem('project-settings', { id: target.dataset.project, project: target.dataset.project, category: state.tab });
+    try {
+      state.projectSettings = await getProjectSettings();
+      const project = target.dataset.project;
+      const item = { id: project, project, category: target.dataset.projectCategory || state.tab, setting: target.dataset.projectSetting, settings: Object.hasOwn(state.projectSettings, project) ? state.projectSettings[project] : {} };
+      if (target.dataset.projectSetting) splitItem('project-settings', item, 'horizontal');
+      else openItem('project-settings', item);
+    } catch { state.notice = 'Project settings could not be loaded. Existing settings were preserved.'; render(); }
     return;
   }
   if (action === 'rename-item') {
@@ -1084,7 +1155,7 @@ app.addEventListener('error', (event) => {
 }, true);
 
 app.addEventListener('input', (event) => {
-  if (handleCallerPreviewEvent(event)) return;
+  if (handleCallerRestrictionsEvent(event, state.root)) return;
   const target = event.target;
   if (target.dataset.action === 'rename-input') { state.sidebarRename.value = target.value; return; }
   if (target.dataset.action === 'search') {
@@ -1115,11 +1186,19 @@ app.addEventListener('input', (event) => {
   }
   if (target.dataset.action === 'access-world') {
     const node = findPane(state.root, target.dataset.paneId);
-    if (['secret', 'storage', 'lambda', 'trigger'].includes(node?.pane.type)) {
+    if (['secret', 'storage', 'lambda'].includes(node?.pane.type)) {
       const worlds = new Set(node.pane.editable.allowedWorlds || []);
       target.checked ? worlds.add(target.dataset.world) : worlds.delete(target.dataset.world);
       node.pane.editable.allowedWorlds = [...worlds];
-      if (node.pane.type === 'lambda') node.pane.editable.world = accessPolicy.functionExecutionOptions(node.pane.editable, state.allowMainWorldFunctions).selected || '';
+      node.pane.changed = true;
+      renderPreservingFocus();
+    }
+    return;
+  }
+  if (target.dataset.action === 'trigger-enabled') {
+    const node = findPane(state.root, target.dataset.paneId);
+    if (node?.pane.type === 'trigger') {
+      node.pane.editable.enabled = target.checked;
       node.pane.changed = true;
       renderPreservingFocus();
     }
@@ -1127,6 +1206,7 @@ app.addEventListener('input', (event) => {
   }
   if (target.dataset.paneId && target.dataset.field) {
     updateEditable(target.dataset.paneId, target.dataset.field, target.value);
+    if (target.dataset.field === 'world') renderPreservingFocus();
     if (target.dataset.field === 'value' && target.classList.contains('secret-value')) {
       state.revealedSecretPanes.delete(target.dataset.paneId);
       target.classList.add('secret-value-hidden');
@@ -1156,7 +1236,7 @@ app.addEventListener('input', (event) => {
   }
 });
 
-app.addEventListener('change', handleCallerPreviewEvent);
+app.addEventListener('change', (event) => handleCallerRestrictionsEvent(event, state.root));
 
 app.addEventListener('scroll', (event) => {
   if (!event.target.classList?.contains('code-editor')) return;
@@ -1195,8 +1275,9 @@ window.addEventListener('hashchange', () => {
   state.allowMainWorldSecrets = await getAllowMainWorldSecrets();
   state.allowMainWorldStorage = await getAllowMainWorldStorage();
   state.allowMainWorldFunctions = await getAllowMainWorldFunctions();
-  state.allowMainWorldTriggers = await getAllowMainWorldTriggers();
   state.styles = await getShellThemes();
+  try { state.projectSettings = await getProjectSettings(); }
+  catch { state.notice = 'Project settings could not be loaded. Existing settings were preserved.'; }
   state.pendingBatches = await getBaahPendingBatches();
   state.activityLogs = (await chrome.storage.local.get('activityLogs')).activityLogs || [];
   await refreshOpenTabs();
@@ -1210,18 +1291,36 @@ window.addEventListener('hashchange', () => {
 })();
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[PROJECT_SETTINGS_KEY]) {
+    try {
+      state.projectSettings = normalizeProjectSettings(changes[PROJECT_SETTINGS_KEY].newValue ?? {});
+      const visit = (node) => {
+        if (!node) return;
+        if (node.type !== 'pane') { node.children.forEach(visit); return; }
+        if (node.pane.type !== 'project-settings' || node.pane.changed) return;
+        const project = node.pane.item.project;
+        const settings = Object.hasOwn(state.projectSettings, project) ? state.projectSettings[project] : {};
+        if (sameStorageRecord(node.pane.item.settings, settings)) return;
+        node.pane.item = { ...node.pane.item, settings: clone(settings) };
+        node.pane.editable = clone(node.pane.item);
+      };
+      visit(state.root);
+      renderPreservingFocus();
+    } catch { state.notice = 'Project settings are invalid. Existing settings were preserved.'; render(); }
+  }
   if (area === 'local') {
     const globals = {};
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS]) globals.allowMainWorldFunctions = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS].newValue === true;
-    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS]) globals.allowMainWorldTriggers = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS].newValue === true;
     if (changes.local_storage_key_baah_require_review) globals.baahRequireReview = state.baahRequireReview = changes.local_storage_key_baah_require_review.newValue !== false;
-    if (changes.local_storage_key_baah_poll_changes) globals.baahPollChanges = state.baahPollChanges = changes.local_storage_key_baah_poll_changes.newValue !== false;
-    updateProjectSettingsGlobals(globals);
+    if (changes.local_storage_key_baah_poll_changes) {
+      globals.baahPollChanges = state.baahPollChanges = changes.local_storage_key_baah_poll_changes.newValue !== false;
+      syncBaahPolling();
+    }
+    if (Object.keys(globals).length) updateProjectSettingsGlobals(globals);
   }
   if (area === 'local' && changes.activityLogs) { state.activityLogs = changes.activityLogs.newValue || []; if (state.tab === 'activity') render(); }
   if (area === 'local' && changes[LOCAL_STORAGE_KEY_STORAGE] && accessPolicy) void refreshStorage();
-  if (area === 'local' && (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE])) {
-    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS]) state.allowMainWorldTriggers = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS].newValue === true;
+  if (area === 'local' && (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE])) {
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS]) state.allowMainWorldFunctions = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS].newValue === true;
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS]) state.allowMainWorldSecrets = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS].newValue === true;
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE]) state.allowMainWorldStorage = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE].newValue === true;

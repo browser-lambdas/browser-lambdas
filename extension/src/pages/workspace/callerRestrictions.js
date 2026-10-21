@@ -1,53 +1,47 @@
 import { escapeHtml } from './html.js';
+import { findPane } from './paneTree.js';
 
-// Preview drafts are separate from records so Save cannot grant apparent protection.
-const drafts = new Map();
+const names = (item, key) => Array.isArray(item[key]) ? item[key].join('\n') : '';
+const empty = (item, key) => !names(item, key).trim();
 
-function getDraft(key) {
-  if (!drafts.has(key)) drafts.set(key, { projectsEnabled: false, functionsEnabled: false, projects: '', functions: '' });
-  return drafts.get(key);
+function summary(item) {
+  if (!item.projectsEnabled && !item.functionsEnabled) return 'Available to all projects and functions';
+  if ((item.projectsEnabled && empty(item, 'allowedProjects')) || (item.functionsEnabled && empty(item, 'allowedFunctions'))) return 'Empty allowlist · no callers allowed';
+  return `Restricted to listed ${item.projectsEnabled && item.functionsEnabled ? 'projects and functions' : item.projectsEnabled ? 'projects' : 'functions'}`;
 }
 
-function summary(draft) {
-  if (!draft.projectsEnabled && !draft.functionsEnabled) return 'Available to all projects and functions';
-  if ((draft.projectsEnabled && !draft.projects.trim()) || (draft.functionsEnabled && !draft.functions.trim())) return 'Empty allowlist · would block every caller';
-  return `Restricted to listed ${draft.projectsEnabled && draft.functionsEnabled ? 'projects and functions' : draft.projectsEnabled ? 'projects' : 'functions'}`;
+function body(item) {
+  const field = (enabledKey, listKey, label, placeholder) => `<label class="access-toggle-row"><span>Only allow specific ${label}</span><input type="checkbox" role="switch" aria-label="Only allow specific ${label}" class="access-switch" data-caller-field="${enabledKey}" ${item[enabledKey] ? 'checked' : ''}></label>${item[enabledKey] ? `<label class="form-field"><span class="security-help">One exact ${listKey === 'allowedProjects' ? 'project name' : 'project/function name'} per line. An empty list blocks every caller.</span><textarea class="form-textarea" rows="3" aria-label="Allowed ${label}" data-caller-field="${listKey}" spellcheck="false" placeholder="${placeholder}">${escapeHtml(names(item, listKey))}</textarea></label>` : ''}`;
+  return `${field('projectsEnabled', 'allowedProjects', 'projects', 'project-name')}${field('functionsEnabled', 'allowedFunctions', 'functions', 'project-name/function-name')}${item.projectsEnabled && item.functionsEnabled ? '<p class="security-help">Access must match both lists.</p>' : ''}${item.projectsEnabled || item.functionsEnabled || names(item, 'allowedProjects') || names(item, 'allowedFunctions') ? '<button type="button" class="caller-restrictions-reset" data-caller-reset>Clear restrictions</button>' : ''}`;
 }
 
-function body(draft) {
-  const field = (kind, label, placeholder) => `<label class="access-toggle-row"><span>Only allow specific ${label}</span><input type="checkbox" role="switch" aria-label="Only allow specific ${label}" class="access-switch" data-caller-field="${kind}Enabled" ${draft[`${kind}Enabled`] ? 'checked' : ''}></label>${draft[`${kind}Enabled`] ? `<label class="form-field"><span class="security-help">One exact ${kind === 'projects' ? 'project name' : 'project/function name'} per line. An empty list would block every caller.</span><textarea class="form-textarea" rows="3" aria-label="Allowed ${label}" data-caller-field="${kind}" spellcheck="false" placeholder="${placeholder}">${escapeHtml(draft[kind])}</textarea></label>` : ''}`;
-  return `<p class="security-help">UI preview. These restrictions are not applied; drafts clear when you reload.</p>${field('projects', 'projects', 'invoices')}${field('functions', 'functions', 'invoices/read-total')}${draft.projectsEnabled && draft.functionsEnabled ? '<p class="security-help">Access would need to match both lists.</p>' : ''}${draft.projectsEnabled || draft.functionsEnabled || draft.projects || draft.functions ? '<button type="button" class="caller-preview-reset" data-caller-reset>Reset preview</button>' : ''}`;
+export function renderCallerRestrictions(node) {
+  const item = node.pane.editable;
+  return `<details class="caller-restrictions" data-caller-pane="${node.id}"><summary>Caller restrictions</summary><p class="caller-restrictions-description">${summary(item)}</p><div class="caller-restrictions-body">${body(item)}</div></details>`;
 }
 
-export function renderCallerRestrictions(type, id) {
-  const key = `${type}:${id}`;
-  const draft = getDraft(key);
-  return `<details class="caller-preview" data-caller-key="${escapeHtml(key)}"><summary>Caller restrictions <span class="caller-preview-badge">Preview</span></summary><p class="caller-preview-description">${summary(draft)}</p><div class="caller-preview-body">${body(draft)}</div></details>`;
-}
-
-export function handleCallerPreviewEvent(event) {
+export function handleCallerRestrictionsEvent(event, root) {
   const control = event.target.closest('[data-caller-field], [data-caller-reset]');
   if (!control) return false;
-  const container = control.closest('[data-caller-key]');
-  const key = container.dataset.callerKey;
+  const container = control.closest('[data-caller-pane]');
+  const node = findPane(root, container.dataset.callerPane);
+  if (!node) return true;
+  const item = node.pane.editable;
   if (control.hasAttribute('data-caller-reset')) {
     if (event.type !== 'click') return true;
-    drafts.delete(key);
+    Object.assign(item, { projectsEnabled: false, functionsEnabled: false, allowedProjects: [], allowedFunctions: [] });
+  } else if (control.type === 'checkbox') {
+    if (event.type !== 'change') return true;
+    item[control.dataset.callerField] = control.checked;
   } else {
-    const draft = getDraft(key);
-    if (control.type === 'checkbox') {
-      if (event.type !== 'change') return true;
-      draft[control.dataset.callerField] = control.checked;
-    } else {
-      if (event.type !== 'input') return true;
-      draft[control.dataset.callerField] = control.value;
-      container.querySelector('.caller-preview-description').textContent = summary(draft);
-      return true;
-    }
+    if (event.type !== 'input') return true;
+    item[control.dataset.callerField] = control.value.split('\n');
   }
-  const draft = getDraft(key);
-  container.querySelector('.caller-preview-description').textContent = summary(draft);
-  container.querySelector('.caller-preview-body').innerHTML = body(draft);
+  node.pane.changed = true;
+  node.pane.error = '';
+  container.querySelector('.caller-restrictions-description').textContent = summary(item);
+  if (control.type === 'textarea') return true;
+  container.querySelector('.caller-restrictions-body').innerHTML = body(item);
   container.querySelector(`[data-caller-field="${control.dataset.callerField || 'projectsEnabled'}"]`)?.focus();
   return true;
 }

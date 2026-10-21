@@ -3,7 +3,7 @@ import { normalizeAccessPolicy, normalizeStoragePolicy } from './accessPolicy.js
 
 // Factories for new records. Existing records retain their fields and permissions;
 // accessPolicy.js owns policy normalization and validation, storageRecords.js parsing.
-export function newLambda(name = '', func = '', project = '', world = 'USER_SCRIPT') {
+export function newLambda(name = '', func = '', project = '', world = '') {
     return { id: uuid(), name, project, func, world, ...normalizeAccessPolicy() };
 }
 
@@ -22,7 +22,7 @@ export function newSecret(key = '', value = '') {
 }
 
 export function newTrigger(name = '', patterns = [], commands = [], project = '') {
-    return { id: uuid(), name, project, patterns: [...patterns], commands: [...commands], allowedWorlds: ['user_scripts'] };
+    return { id: uuid(), name, project, patterns: [...patterns], commands: [...commands], enabled: true };
 }
 
 export function newStyle(name = '', css = '', project = '') {

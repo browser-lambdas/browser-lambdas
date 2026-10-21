@@ -1,0 +1,4 @@
+# baah.toml
+
+[project]
+name = "declutter"

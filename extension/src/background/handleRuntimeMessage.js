@@ -1,4 +1,5 @@
 import { isWorkspaceSender, mutateWorkspaceStorage } from './storageRepository.js';
+import { saveProjectSettings } from '../shared/projectPolicy.js';
 import { SCRIPT_STATUS_CACHE_KEY } from './constants.js';
 import { executeLambda } from './executeLambda.js';
 import { runTriggers } from './runTriggers.js';
@@ -28,6 +29,14 @@ const setScriptStatusCache = async (cache) => {
     });
 };
 export function handleRuntimeMessage(message, sender, sendResponse) {
+    if (message?.type === 'WORKSPACE_PROJECT_SETTINGS_UPDATE') {
+        if (!isWorkspaceSender(sender)) {
+            sendResponse({ success: false, error: 'Project settings can only be changed in the workspace.' });
+            return false;
+        }
+        saveProjectSettings(message).then(sendResponse).catch(() => sendResponse({ success: false, error: 'Project settings could not be saved. Check the URL patterns; existing settings were preserved.' }));
+        return true;
+    }
     if (message?.type === 'WORKSPACE_STORAGE_MUTATION') {
         if (!isWorkspaceSender(sender)) {
             sendResponse({ success: false, error: 'Storage administration is only available in the workspace.' });

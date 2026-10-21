@@ -32,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: npm ci
+      - run: npm ci --prefix ../cli
       - run: npm run check
       - run: npm run test:unit
       - run: bash ./compile.sh

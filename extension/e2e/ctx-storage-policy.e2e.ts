@@ -1,6 +1,29 @@
 import { test, expect } from './fixtures';
+import { exerciseCallerAllowlist, runPolicyCommand } from './policy-helpers';
 
 test.describe.configure({ timeout: 120_000 });
+
+test('K-V caller controls enforce project/function allowlists, empty lists and the full calling ancestry', async ({ page, extensionContext, extensionId, localTestPage }) => {
+	await exerciseCallerAllowlist({ page, extensionContext, extensionId, localTestPage, secret: false });
+});
+
+test('revoking a project permission blocks the next request of an already-running invocation', async ({ page, extensionContext, localTestPage }) => {
+	const worker = extensionContext.serviceWorkers()[0];
+	await worker.evaluate(async () => {
+		await chrome.storage.local.set({
+			local_storage_key_storage: JSON.stringify([{ id: 'live', key: 'live', value: 'UNCHANGED' }]),
+			local_storage_key_lambdas: JSON.stringify([{ id: 'live', project: 'live', name: 'live-permission', func: 'const before = await ctx.kv.get("live"); document.body.dataset.beforeRevocation = before; await new Promise(resolve => document.addEventListener("continue-permission-test", resolve, { once: true })); const saved = await ctx.kv.set("live", "CHANGED"); console.log(JSON.stringify({ saved }));' }])
+		});
+	});
+	await page.goto(localTestPage);
+	const output = await runPolicyCommand(page, 'live-permission');
+	await expect(page.locator('body')).toHaveAttribute('data-before-revocation', 'UNCHANGED');
+	await worker.evaluate(() => chrome.storage.local.set({ local_storage_key_project_settings: { live: { functions: { userWorld: false } } } }));
+	await page.evaluate(() => document.dispatchEvent(new Event('continue-permission-test')));
+	await expect(output.filter({ hasText: '{"saved":false}' })).toHaveCount(1);
+	await expect(output.filter({ hasText: 'access was revoked' })).toHaveCount(1);
+	expect(await worker.evaluate(async () => JSON.parse((await chrome.storage.local.get('local_storage_key_storage')).local_storage_key_storage)[0].value)).toBe('UNCHANGED');
+});
 
 test('K-V checks pages and both main-world permissions for reads and writes', async ({ page, extensionId, localTestPage, reactionTime }) => {
 	const base = `chrome-extension://${extensionId}`;

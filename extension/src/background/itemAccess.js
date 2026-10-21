@@ -3,6 +3,7 @@ import { evaluateAccessPolicy, accessDenialReasons, normalizeStoragePolicy, norm
 import { readStorageRecords, mutateStorageRecords } from './storageRepository.js';
 import { appendActivityLog } from './activityLog.js';
 import { newRuntimeStorageItem } from '../shared/records.js';
+import { verifiedInvocation, callerAccessReasons } from './invocations.js';
 
 export async function handleItemAccess(msg, tabId) {
     const secret = msg.type === 'GET_SECRET_REQUEST';
@@ -13,6 +14,11 @@ export async function handleItemAccess(msg, tabId) {
     try {
         if (typeof msg.key !== 'string' || (write && !Object.hasOwn(msg, 'value'))) throw new Error('Invalid storage request.');
         const operate = async (records) => {
+            const invocation = await verifiedInvocation(msg.invocationToken, tabId);
+            if (Object.hasOwn(msg, 'invocationToken') && !invocation) {
+                return { changed: false, ...response, error: 'Access blocked: the calling function could not be verified or its access was revoked. Run the function again.' };
+            }
+            const executionWorld = invocation?.executionWorld || msg.executionWorld;
             url = tabId == null ? '' : (await chrome.tabs.get(tabId).catch(() => null))?.url || '';
             const settingKey = secret ? ALLOW_MAIN_WORLD_SECRETS_KEY : ALLOW_MAIN_WORLD_STORAGE_KEY;
             const setting = await chrome.storage.local.get(settingKey);
@@ -20,16 +26,16 @@ export async function handleItemAccess(msg, tabId) {
             if (!item && !secret && !write) return { changed: false, ...response, found: false, key: msg.key };
             if (!item && write) {
                 const created = newRuntimeStorageItem(msg.key, msg.value);
-                const policy = evaluateAccessPolicy({ policy: created, executionWorld: msg.executionWorld, url, allowMainWorld: setting[settingKey] });
+                const policy = evaluateAccessPolicy({ policy: created, executionWorld, url, allowMainWorld: setting[settingKey] });
                 if (!policy.allowed) {
-                    return { changed: false, ...response, error: `Storage write blocked for key ${JSON.stringify(msg.key)}: ${accessDenialReasons(policy.reasons, msg.executionWorld, kind).join('; ')}.` };
+                    return { changed: false, ...response, error: `Storage write blocked for key ${JSON.stringify(msg.key)}: ${accessDenialReasons(policy.reasons, executionWorld, kind).join('; ')}.` };
                 }
                 records.push(created);
                 return { changed: true, ...response, value: true };
             }
             const itemPolicy = secret ? item || {} : normalizeStoragePolicy(item || {});
-            const policy = evaluateAccessPolicy({ policy: itemPolicy, executionWorld: msg.executionWorld, url, allowMainWorld: setting[settingKey] });
-            const reasons = item ? accessDenialReasons(policy.reasons, msg.executionWorld, kind) : [`the ${kind} does not exist`];
+            const policy = evaluateAccessPolicy({ policy: itemPolicy, executionWorld, url, allowMainWorld: setting[settingKey] });
+            const reasons = item ? [...accessDenialReasons(policy.reasons, executionWorld, kind), ...callerAccessReasons(item, invocation)] : [`the ${kind} does not exist`];
             if (reasons.length) {
                 const label = secret ? 'Secret access' : `Storage ${write ? 'write' : 'read'}`;
                 return { changed: false, ...response, error: `${label} blocked for key ${JSON.stringify(msg.key)}: ${reasons.join('; ')}.` };

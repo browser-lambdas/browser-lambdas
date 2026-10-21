@@ -16,7 +16,6 @@ const LOCAL_STORAGE_KEY_BAAH_TOKEN = 'local_storage_key_baah_token';
 const LOCAL_STORAGE_KEY_WS_PORT = 'local_storage_key_ws_port';
 const LOCAL_STORAGE_KEY_BAAH_REQUIRE_REVIEW = 'local_storage_key_baah_require_review';
 const LOCAL_STORAGE_KEY_BAAH_POLL_CHANGES = 'local_storage_key_baah_poll_changes';
-const LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS = 'local_storage_key_allow_main_world_triggers';
 const LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS = 'local_storage_key_allow_main_world_functions';
 const LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE = 'local_storage_key_allow_main_world_storage';
 const LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS = 'local_storage_key_allow_main_world_secrets';
@@ -110,8 +109,6 @@ const getStorageItems = async () => {
 const mutateStorageItem = async (operation, item, expected) => chrome.runtime.sendMessage({
     type: 'WORKSPACE_STORAGE_MUTATION', operation, item, expected
 });
-const getAllowMainWorldTriggers = async () => (await getChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS)) === true;
-const setAllowMainWorldTriggers = async (enabled) => setChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS, enabled === true);
 const getAllowMainWorldFunctions = async () => (await getChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS)) === true;
 const setAllowMainWorldFunctions = async (enabled) => setChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS, enabled === true);
 const getAllowMainWorldStorage = async () => (await getChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE)) === true;
@@ -376,22 +373,22 @@ const stageBaahPushBatch = async (batch) => {
         const previous = triggers.find((trigger) => trigger.name === item.name && normalizeProject(trigger.project) === itemProject);
         const previousValue = JSON.stringify({ patterns: previous?.patterns || [], commands: previous?.commands || [] });
         const incomingValue = JSON.stringify({ patterns: item.patterns || [], commands: item.commands || [] });
-        return { id: crypto.randomUUID(), type: 'trigger', name: item.name, project: itemProject, previous: previous ? { id: previous.id, name: previous.name, project: previous.project, patterns: previous.patterns || [], commands: previous.commands || [], allowedWorlds: normalizeAccessPolicy(previous).allowedWorlds, hash: hashString(previousValue) } : null, incoming: { name: item.name, project: itemProject, patterns: item.patterns || [], commands: item.commands || [], allowedWorlds: normalizeAccessPolicy(previous || {}).allowedWorlds, hash: hashString(incomingValue) }, action: itemAction(previous, previousValue, incomingValue) };
+        return { id: crypto.randomUUID(), type: 'trigger', name: item.name, project: itemProject, previous: previous ? { id: previous.id, name: previous.name, project: previous.project, patterns: previous.patterns || [], commands: previous.commands || [], hash: hashString(previousValue) } : null, incoming: { name: item.name, project: itemProject, patterns: item.patterns || [], commands: item.commands || [], hash: hashString(incomingValue) }, action: itemAction(previous, previousValue, incomingValue) };
     });
     for (const lambda of lambdas) {
-        if (normalizeProject(lambda.project) === project && !pushedNames.lambdas.has(lambda.name)) {
+        if (Array.isArray(manifest.lambdas) && normalizeProject(lambda.project) === project && !pushedNames.lambdas.has(lambda.name)) {
             items.push({ id: crypto.randomUUID(), type: 'lambda', name: lambda.name, sourcePath: lambda.name + '.js', project, previous: { id: lambda.id, name: lambda.name, project: lambda.project, func: lambda.func, world: lambda.world || 'USER_SCRIPT', ...normalizeAccessPolicy(lambda), hash: hashString(lambda.func) }, incoming: null, action: 'delete' });
         }
     }
     for (const style of styles) {
-        if (normalizeProject(style.project) === project && !pushedNames.styles.has(style.name)) {
+        if (Array.isArray(manifest.styles) && normalizeProject(style.project) === project && !pushedNames.styles.has(style.name)) {
             items.push({ id: crypto.randomUUID(), type: 'style', name: style.name, project, previous: { name: style.name, project: style.project, css: style.css, selected: style.selected, hash: hashString(style.css) }, incoming: null, action: 'delete' });
         }
     }
     for (const trigger of triggers) {
-        if (normalizeProject(trigger.project) === project && !pushedNames.triggers.has(trigger.name)) {
+        if (Array.isArray(manifest.triggers) && normalizeProject(trigger.project) === project && !pushedNames.triggers.has(trigger.name)) {
             const previousValue = JSON.stringify({ patterns: trigger.patterns || [], commands: trigger.commands || [] });
-            items.push({ id: crypto.randomUUID(), type: 'trigger', name: trigger.name, project, previous: { id: trigger.id, name: trigger.name, project: trigger.project, patterns: trigger.patterns || [], commands: trigger.commands || [], allowedWorlds: normalizeAccessPolicy(trigger).allowedWorlds, hash: hashString(previousValue) }, incoming: null, action: 'delete' });
+            items.push({ id: crypto.randomUUID(), type: 'trigger', name: trigger.name, project, previous: { id: trigger.id, name: trigger.name, project: trigger.project, patterns: trigger.patterns || [], commands: trigger.commands || [], hash: hashString(previousValue) }, incoming: null, action: 'delete' });
         }
     }
     const staged = { id: batch.id, project, receivedAt: Date.now(), source: 'baah push', status: 'pending', counts: { ...batch.counts, deletes: items.filter((item) => item.action === 'delete').length }, items };
