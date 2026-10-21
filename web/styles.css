@@ -395,15 +395,43 @@ body {
 }
 
 @media (max-width: 700px) {
+	.docs-shell {
+		padding-inline: 1rem;
+	}
+
 	.docs-layout {
 		grid-template-columns: minmax(0, 1fr);
 		height: auto;
 	}
 
+	.docs-nav {
+		position: static;
+		max-width: none;
+		max-height: none;
+		overflow: visible;
+		padding: 0 0 1.5rem;
+	}
+
+	.docs-logo {
+		width: 72px;
+		margin-bottom: 1.5rem;
+	}
+
 	.docs-content {
 		overflow: visible;
 		border-left: none;
-		padding: 1rem 1.5rem 3rem;
+		padding: 1rem 0 3rem;
+	}
+
+	.docs-prose {
+		max-width: none;
+		overflow-wrap: anywhere;
+	}
+
+	.path {
+		display: inline-flex;
+		flex-wrap: wrap;
+		max-width: 100%;
 	}
 }
 

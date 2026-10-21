@@ -85,6 +85,27 @@ test('category navigation, deep links, history and responsive layout', async () 
 		await check('quick-start');
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 		await page.screenshot({ path: '/private/tmp/browser-lambdas-categories-mobile.png' });
+		for (const width of [320, 390, 700]) {
+			await page.setViewportSize({ width, height: 844 });
+			for (const category of [...Object.keys(expected), 'llms']) {
+				await page.locator(`.docs-categories [data-category-link="${category}"]`).click();
+				const layout = await page.evaluate(() => {
+					const nav = document.querySelector('.docs-nav').getBoundingClientRect();
+					const content = document.querySelector('.docs-content').getBoundingClientRect();
+					return { separated: nav.bottom <= content.top, overflow: document.documentElement.scrollWidth > innerWidth };
+				});
+				assert.deepEqual(layout, { separated: true, overflow: false }, `${category} at ${width}px`);
+			}
+		}
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.locator('.docs-categories [data-category-link="intro"]').click();
+		await page.locator('#docs-toc a[href="#how-it-works"]').click();
+		await page.waitForFunction(() => {
+			const heading = document.querySelector('#how-it-works').getBoundingClientRect();
+			return document.querySelector('.docs-nav').getBoundingClientRect().bottom < 0 && heading.top >= 0 && heading.bottom < innerHeight;
+		});
+		assert.ok(await page.locator('.docs-nav').evaluate(el => el.getBoundingClientRect().bottom < 0));
+		await page.screenshot({ path: '/private/tmp/browser-lambdas-mobile-scrolled.png' });
 	} finally {
 		await browser.close();
 	}
