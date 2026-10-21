@@ -524,6 +524,9 @@ function loadAllTriggers(files) {
     const t = loadTriggerFile(file);
     if (t) triggers.push(t);
   }
+  if (triggers.length !== files.length) {
+    throw new Error("Push aborted: some triggers failed to load or parse. Fix the errors and retry; no changes were sent.");
+  }
   return triggers;
 }
 
