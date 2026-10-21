@@ -1,3 +1,8 @@
+## 0.2.0
+
+- Implemented project settings
+- Dependency updates
+
 
 ### 0.1.1
 
