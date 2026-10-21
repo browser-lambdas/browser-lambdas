@@ -25,18 +25,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
     defaults:
       run:
         working-directory: extension
     steps:
       - uses: actions/checkout@v7
       - run: npm ci
+      - run: npm ci --prefix ../cli
       - run: npm run check
       - run: npm run test:unit
       - run: bash ./compile.sh
       - run: npm run test:e2e -- --headless --reaction-time=1000
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-test-results

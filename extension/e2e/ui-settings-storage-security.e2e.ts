@@ -28,7 +28,12 @@ test('storage settings are independent and update open panes without losing draf
 		await page.getByTestId('allow-main-world-storage').click();
 		const main = workspace.getByTestId('storage-security').locator('[data-world="main"]');
 		await expect(main).toBeDisabled();
+		await expect(main).not.toBeChecked();
+		expect(await workspace.evaluate(async () => JSON.parse((await chrome.storage.local.get('local_storage_key_storage')).local_storage_key_storage)[0].allowedWorlds)).toContain('main');
+		await page.getByTestId('allow-main-world-storage').click();
+		await expect(main).toBeEnabled();
 		await expect(main).toBeChecked();
+		await page.getByTestId('allow-main-world-storage').click();
 		await expect(page.getByTestId('allow-main-world-secrets')).toHaveAttribute('aria-pressed', 'false');
 		await page.reload();
 		await expect(page.getByTestId('allow-main-world-storage')).toHaveAttribute('aria-pressed', 'false');

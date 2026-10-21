@@ -2,6 +2,17 @@ const shellParams = new URLSearchParams(location.hash.slice(1));
 const shellParentOrigin = shellParams.get('parentOrigin');
 let shellPort = null;
 let shellNonce = null;
+let shellPolicyModules;
+window.getAllowedShellTheme = async () => {
+    const theme = await getSelectedShellTheme();
+    if (!theme) return null;
+    const { getProjectSettings, evaluateProjectAccess } = await (shellPolicyModules ??= import('../../shared/projectPolicy.js'));
+    if (!evaluateProjectAccess({ settings: await getProjectSettings(), project: theme.project, category: 'styles' }).allowed) return null;
+    return theme;
+};
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.local_storage_key_project_settings || changes.local_storage_key_shellcss)) void refreshShellTheme();
+});
 function executeCommand(command) { shellPort?.postMessage({ type: 'EXECUTE', command }); }
 const shellSendPointer = (type, event, extra = {}) => shellPort?.postMessage({ type, pointerId: event.pointerId, screenX: event.screenX, screenY: event.screenY, ...extra });
 window.addEventListener('message', (event) => {

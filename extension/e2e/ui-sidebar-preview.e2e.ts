@@ -154,21 +154,26 @@ test('category hover waits 200ms and cancels when the pointer leaves', async ({ 
 	await expect(page.getByTestId('sidebar-storage-add')).toBeVisible();
 	const clockStart = new Date('2030-01-01T00:00:00Z');
 	await page.clock.install({ time: clockStart });
-	await page.clock.pauseAt(new Date(clockStart.getTime() + 1_000));
-	const functions = page.getByRole('link', { name: 'Functions', exact: true });
-	await functions.hover();
-	await page.clock.runFor(199);
-	await expect(page).toHaveURL(/#storage$/);
-	await page.locator('.editor-area').hover();
-	await page.clock.runFor(250);
-	await expect(page).toHaveURL(/#storage$/);
-	await functions.hover();
-	await page.clock.runFor(199);
-	await expect(page).toHaveURL(/#storage$/);
-	await page.clock.runFor(1);
-	await expect(page).toHaveURL(/#functions$/);
-	await page.getByRole('link', { name: 'Secrets', exact: true }).click();
-	await expect(page).toHaveURL(/#secrets$/);
-	await page.clock.runFor(250);
-	await expect(page).toHaveURL(/#secrets$/);
+	try {
+		await page.clock.pauseAt(new Date(clockStart.getTime() + 1_000));
+		const functions = page.getByRole('link', { name: 'Functions', exact: true });
+		await functions.hover();
+		await page.clock.runFor(199);
+		await expect(page).toHaveURL(/#storage$/);
+		await page.locator('.editor-area').hover();
+		await page.clock.runFor(250);
+		await expect(page).toHaveURL(/#storage$/);
+		await functions.hover();
+		await page.clock.runFor(199);
+		await expect(page).toHaveURL(/#storage$/);
+		await page.clock.runFor(1);
+		await expect(page).toHaveURL(/#functions$/);
+		await page.getByRole('link', { name: 'Secrets', exact: true }).click();
+		await expect(page).toHaveURL(/#secrets$/);
+		await page.clock.runFor(250);
+		await expect(page).toHaveURL(/#secrets$/);
+	} finally {
+		await page.clock.setSystemTime(new Date());
+		await page.clock.resume();
+	}
 });

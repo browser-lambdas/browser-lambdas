@@ -1,7 +1,31 @@
 import { allowFunctionOnTestPages } from './function-access';
 import { test, expect } from './fixtures';
+import { exerciseCallerAllowlist, runPolicyCommand } from './policy-helpers';
 
 test.describe.configure({ timeout: 120_000 });
+
+test('secret caller controls enforce both allowlists, empty lists and the full calling ancestry', async ({ page, extensionContext, extensionId, localTestPage }) => {
+	await exerciseCallerAllowlist({ page, extensionContext, extensionId, localTestPage, secret: true });
+});
+
+test('an already-running function cannot read a secret after its project permission is revoked', async ({ page, extensionContext, localTestPage }) => {
+	const worker = extensionContext.serviceWorkers()[0];
+	await worker.evaluate(async () => {
+		await chrome.storage.local.set({
+			local_storage_key_secrets: JSON.stringify([{ id: 'live-secret', key: 'live-secret', value: 'PRIVATE_VALUE' }]),
+			local_storage_key_lambdas: JSON.stringify([{ id: 'live', project: 'live', name: 'live-secret', func: 'const before = await ctx.secrets.get("live-secret"); document.body.dataset.secretReadStarted = String(before !== null); await new Promise(resolve => document.addEventListener("continue-secret-test", resolve, { once: true })); console.log(JSON.stringify({ after: await ctx.secrets.get("live-secret") }));' }])
+		});
+	});
+	await page.goto(localTestPage);
+	const output = await runPolicyCommand(page, 'live-secret');
+	await expect(page.locator('body')).toHaveAttribute('data-secret-read-started', 'true');
+	await worker.evaluate(() => chrome.storage.local.set({ local_storage_key_project_settings: { live: { functions: { userWorld: false } } } }));
+	await page.evaluate(() => document.dispatchEvent(new Event('continue-secret-test')));
+	await expect(output.filter({ hasText: '{"after":null}' })).toHaveCount(1);
+	await expect(output.filter({ hasText: 'access was revoked' })).toHaveCount(1);
+	expect((await output.allTextContents()).join('\n')).not.toContain('PRIVATE_VALUE');
+	expect(await worker.evaluate(async () => ((await chrome.storage.local.get('activityLogs')).activityLogs || []).some((entry) => entry.message.includes('PRIVATE_VALUE')))).toBe(false);
+});
 
 test('secret URL policy is evaluated for every current invocation', async ({
 	page,

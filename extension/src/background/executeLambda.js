@@ -1,10 +1,12 @@
 import { getTriggers } from './getTriggers.js';
-import { ALLOW_MAIN_WORLD_FUNCTIONS_KEY, ALLOW_MAIN_WORLD_TRIGGERS_KEY } from './constants.js';
-import { evaluateAccessPolicy, accessDenialReasons, functionExecutionOptions } from '../shared/accessPolicy.js';
+import { ALLOW_MAIN_WORLD_FUNCTIONS_KEY } from './constants.js';
+import { evaluateAccessPolicy, evaluateUrlAccessPolicy, accessDenialReasons } from '../shared/accessPolicy.js';
 import { log } from './activityLog.js';
 import { lambdafy } from './lambdafy.js';
 import { findLambdas, isLambdaPending } from './getLambdas.js';
 import { generateSessionKey } from './generateSessionKey.js';
+import { getProjectSettings, getProjectCategorySettings, evaluateProjectAccess } from '../shared/projectPolicy.js';
+import { registerInvocation, finishInvocation } from './invocations.js';
 import {
     MAIN_WORLD,
     USER_SCRIPT_WORLD,
@@ -13,7 +15,7 @@ import {
 
 export const MAX_NESTED_LAMBDA_DEPTH = 5;
 
-const prepareLambda = async (lambda, userInput, requestId, executionWorld, nestedDepth) => {
+const prepareLambda = async (lambda, userInput, requestId, executionWorld, nestedDepth, tabId, callers) => {
     const context = {
         qToken: crypto.randomUUID(),
         aToken: crypto.randomUUID(),
@@ -25,7 +27,11 @@ const prepareLambda = async (lambda, userInput, requestId, executionWorld, neste
         nestedDepth,
         executionWorld
     };
-    return { code: lambdafy(lambda.func, userInput, context), context };
+    const code = lambdafy(lambda.func, userInput, context);
+    // This capability only travels through extension messaging, never the injected code.
+    const { token, completion } = registerInvocation({ lambda, tabId, executionWorld, requestId, callers });
+    context.invocationToken = token;
+    return { code, context, completion };
 };
 
 const initializeLambdaRuntime = (tabId, context) => chrome.tabs.sendMessage(tabId, {
@@ -33,32 +39,44 @@ const initializeLambdaRuntime = (tabId, context) => chrome.tabs.sendMessage(tabI
     ...context
 });
 
-const executeLambdaInMainWorld = async ({ lambda, tabId, userInput, requestId, nestedDepth }) => {
-    const { code, context } = await prepareLambda(lambda, userInput, requestId, MAIN_WORLD, nestedDepth);
-    await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: (src) => new Function(src)(),
-        args: [code]
-    });
-    initializeLambdaRuntime(tabId, context);
+const executeLambdaInMainWorld = async ({ lambda, tabId, userInput, requestId, nestedDepth, callers }) => {
+    const { code, context, completion } = await prepareLambda(lambda, userInput, requestId, MAIN_WORLD, nestedDepth, tabId, callers);
+    try {
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: (src) => new Function(src)(),
+            args: [code]
+        });
+        await initializeLambdaRuntime(tabId, context);
+        return { started: true, completion };
+    } catch (error) {
+        finishInvocation(context.invocationToken, tabId, requestId, { error: error.message });
+        throw error;
+    }
 };
 
-const executeLambdaInUserWorld = async ({ lambda, tabId, userInput, requestId, nestedDepth }) => {
+const executeLambdaInUserWorld = async ({ lambda, tabId, userInput, requestId, nestedDepth, callers }) => {
     if (!chrome.userScripts?.execute)
         throw new Error('User-script execution is not enabled in Chrome.');
-    const { code, context } = await prepareLambda(lambda, userInput, requestId, USER_SCRIPT_WORLD, nestedDepth);
-    const results = await chrome.userScripts.execute({
-        target: { tabId },
-        world: 'USER_SCRIPT',
-        js: [{ code }]
-    });
-    if (results.length === 0)
-        throw new Error('The user script did not run in the selected tab.');
-    initializeLambdaRuntime(tabId, context);
+    const { code, context, completion } = await prepareLambda(lambda, userInput, requestId, USER_SCRIPT_WORLD, nestedDepth, tabId, callers);
+    try {
+        const results = await chrome.userScripts.execute({
+            target: { tabId },
+            world: 'USER_SCRIPT',
+            js: [{ code }]
+        });
+        if (results.length === 0)
+            throw new Error('The user script did not run in the selected tab.');
+        await initializeLambdaRuntime(tabId, context);
+        return { started: true, completion };
+    } catch (error) {
+        finishInvocation(context.invocationToken, tabId, requestId, { error: error.message });
+        throw error;
+    }
 };
 
-export async function executeLambda(tabId, rawInput, requestId, nestedDepth = 0, triggerReference = null) {
+export async function executeLambda(tabId, rawInput, requestId, nestedDepth = 0, triggerReference = null, callers = []) {
     const invocation = parseExecutionInvocation(rawInput);
     if (invocation.invalidPrefix) {
         return { started: false, error: `Invalid prefix ${invocation.invalidPrefix}` };
@@ -93,13 +111,19 @@ export async function executeLambda(tabId, rawInput, requestId, nestedDepth = 0,
         tabId,
         userInput: invocation.userInput,
         requestId,
-        nestedDepth
+        nestedDepth,
+        callers
     };
     const settings = await chrome.storage.local.get(ALLOW_MAIN_WORLD_FUNCTIONS_KEY);
-    const defaultWorld = functionExecutionOptions(lambda, settings[ALLOW_MAIN_WORLD_FUNCTIONS_KEY]).selected;
+    const projectSettings = await getProjectSettings();
+    const globals = {
+        allowMainWorldFunctions: settings[ALLOW_MAIN_WORLD_FUNCTIONS_KEY] === true
+    };
+    const project = getProjectCategorySettings(projectSettings, lambda.project || 'default', 'functions', globals);
+    const defaultWorld = lambda.world || project.mode || 'USER_SCRIPT';
     const selectedWorld = invocation.hasExecutionPrefix
         ? invocation.execution
-        : (defaultWorld || lambda.world) === 'MAIN' ? MAIN_WORLD : USER_SCRIPT_WORLD;
+        : defaultWorld === 'MAIN' ? MAIN_WORLD : USER_SCRIPT_WORLD;
     const currentTab = tabId == null ? null : await chrome.tabs.get(tabId).catch(() => null);
     // Only the background trigger dispatcher supplies this reference. Reload the
     // definition for each command so revoked permissions/deletions take effect.
@@ -114,24 +138,26 @@ export async function executeLambda(tabId, rawInput, requestId, nestedDepth = 0,
             log.err(error);
             return { started: false, error };
         }
-        const settings = await chrome.storage.local.get(ALLOW_MAIN_WORLD_TRIGGERS_KEY);
-        const policy = evaluateAccessPolicy({
+        const policy = evaluateUrlAccessPolicy({
             policy: { ...trigger, urlPatterns: trigger.patterns, urlAllowlistEnabled: true },
-            executionWorld: selectedWorld, url: currentTab?.url || '',
-            allowMainWorld: settings[ALLOW_MAIN_WORLD_TRIGGERS_KEY]
+            url: currentTab?.url || ''
         });
-        if (!policy.allowed) {
-            const error = `Trigger execution blocked for ${JSON.stringify(trigger.name || 'unnamed')}: ${accessDenialReasons(policy.reasons, selectedWorld, 'trigger').join('; ')}.`;
+        const projectPolicy = evaluateProjectAccess({ settings: projectSettings, project: trigger.project || 'default', category: 'triggers', url: currentTab?.url || '' });
+        if (trigger.enabled === false || !policy.allowed || !projectPolicy.allowed) {
+            const reasons = [...accessDenialReasons(policy.reasons, selectedWorld, 'trigger'), ...projectPolicy.reasons];
+            if (trigger.enabled === false) reasons.push('automatic execution is disabled for this trigger');
+            const error = `Trigger execution blocked for ${JSON.stringify(trigger.name || 'unnamed')}: ${reasons.join('; ')}.`;
             log.err(error);
             return { started: false, error };
         }
     }
     const policy = evaluateAccessPolicy({
         policy: lambda, executionWorld: selectedWorld, url: currentTab?.url || '',
-        allowMainWorld: settings[ALLOW_MAIN_WORLD_FUNCTIONS_KEY]
+        allowMainWorld: globals.allowMainWorldFunctions
     });
-    if (!policy.allowed) {
-        const error = `Function execution blocked for ${JSON.stringify(cmd)}: ${accessDenialReasons(policy.reasons, selectedWorld, 'function').join('; ')}.`;
+    const projectPolicy = evaluateProjectAccess({ settings: projectSettings, project: lambda.project || 'default', category: 'functions', executionWorld: selectedWorld, url: currentTab?.url || '', globals });
+    if (!policy.allowed || !projectPolicy.allowed) {
+        const error = `Function execution blocked for ${JSON.stringify(cmd)}: ${[...accessDenialReasons(policy.reasons, selectedWorld, 'function'), ...projectPolicy.reasons].join('; ')}.`;
         log.err(error);
         return { started: false, error };
     }

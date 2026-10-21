@@ -11,7 +11,7 @@ type RunResult = { stdout: string; stderr: string; code: number };
 
 async function runBaah(args: string[], opts: SpawnOptions = {}): Promise<RunResult> {
 	return new Promise((resolve, reject) => {
-		const ps = spawn('baah', args, {
+		const ps = spawn(process.execPath, [path.join(CLI_DIR, 'baah.js'), ...args], {
 			cwd: opts.cwd,
 			env: opts.env ? { ...process.env, ...opts.env } : process.env,
 			stdio: ['ignore', 'pipe', 'pipe']
@@ -41,6 +41,7 @@ export const test = base.extend<
 		extensionId: string;
 		/** URL for navigating to the local test page */
 		localTestPage: string;
+		isolatedState: void;
 		/** Delay used between UI actions */
 		reactionTime: number;
 		runBaah: (args: string[], opts?: SpawnOptions) => Promise<RunResult>;
@@ -56,8 +57,6 @@ export const test = base.extend<
 
 	runBaah: [
 		async ({}, use) => {
-			execSync('npm ci', { cwd: CLI_DIR, stdio: 'inherit' });
-			execSync('npm link', { cwd: CLI_DIR, stdio: 'inherit' });
 			await use((args, opts = {}) => runBaah(args, { cwd: CLI_DIR, ...opts }));
 		},
 		{ scope: 'worker' }
@@ -140,6 +139,19 @@ export const test = base.extend<
 		},
 		{ scope: 'worker' }
 	],
+
+	isolatedState: [async ({ extensionContext }, use) => {
+		const existingPages = new Set(extensionContext.pages());
+		const worker = extensionContext.serviceWorkers()[0] || await extensionContext.waitForEvent('serviceworker');
+		await worker.evaluate(() => chrome.storage.local.clear());
+		try {
+			await use();
+		} finally {
+			await Promise.allSettled(extensionContext.pages().filter((page) => !existingPages.has(page)).map((page) => page.close()));
+			const currentWorker = extensionContext.serviceWorkers()[0];
+			if (currentWorker) await currentWorker.evaluate(() => chrome.storage.local.clear());
+		}
+	}, { auto: true }],
 
 	page: async ({ extensionContext }, use) => {
 		const page = await extensionContext.newPage();

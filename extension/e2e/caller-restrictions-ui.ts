@@ -1,0 +1,53 @@
+import type { Page } from '@playwright/test';
+import { expect } from './fixtures';
+
+export async function exerciseCallerRestrictions(page: Page, extensionId: string, category: 'storage' | 'secrets') {
+	await page.goto(`chrome-extension://${extensionId}/workspace.html#${category}`);
+	await page.getByTestId(`sidebar-${category}-add`).click();
+	await page.getByRole('button', { name: 'Show settings' }).click();
+	await page.getByTestId('pane-key').fill(`caller-ui-${category}`);
+	await page.getByTestId('pane-value').fill('preserved value');
+	const callers = page.locator('.caller-restrictions');
+	const reopen = async () => {
+		await page.reload();
+		await page.getByTestId(`sidebar-${category}-item`).filter({ hasText: `caller-ui-${category}` }).click();
+		await page.getByRole('button', { name: 'Show settings' }).click();
+		await callers.locator('summary').click();
+	};
+	await callers.locator('summary').click();
+	const projects = callers.getByRole('switch', { name: 'Only allow specific projects', exact: true });
+	const functions = callers.getByRole('switch', { name: 'Only allow specific functions', exact: true });
+	await expect(projects).not.toBeChecked();
+	await expect(functions).not.toBeChecked();
+	await expect(callers.locator('.caller-restrictions-description')).toHaveText('Available to all projects and functions');
+	await projects.check();
+	await expect(callers.locator('.caller-restrictions-description')).toHaveText('Empty allowlist · no callers allowed');
+	await callers.getByLabel('Allowed projects', { exact: true }).fill(' alpha\nbeta\nalpha\n');
+	await functions.check();
+	await callers.getByLabel('Allowed functions', { exact: true }).fill('alpha/read\nbeta/read');
+	await expect(callers.getByText('Access must match both lists.', { exact: true })).toBeVisible();
+	await page.getByTestId('pane-save').click();
+	await reopen();
+	await expect(projects).toBeChecked();
+	await expect(functions).toBeChecked();
+	await expect(callers.getByLabel('Allowed projects', { exact: true })).toHaveValue('alpha\nbeta');
+	await expect(callers.getByLabel('Allowed functions', { exact: true })).toHaveValue('alpha/read\nbeta/read');
+	await expect(page.getByTestId('pane-value')).toHaveValue('preserved value');
+	await projects.uncheck();
+	await functions.uncheck();
+	await page.getByTestId('pane-save').click();
+	await reopen();
+	await expect(projects).not.toBeChecked();
+	await expect(functions).not.toBeChecked();
+	await projects.check();
+	await expect(callers.getByLabel('Allowed projects', { exact: true })).toHaveValue('alpha\nbeta');
+	await functions.check();
+	await expect(callers.getByLabel('Allowed functions', { exact: true })).toHaveValue('alpha/read\nbeta/read');
+	await callers.getByRole('button', { name: 'Clear restrictions', exact: true }).click();
+	await page.getByTestId('pane-save').click();
+	await reopen();
+	await expect(projects).not.toBeChecked();
+	await expect(functions).not.toBeChecked();
+	await expect(callers.getByRole('button', { name: 'Clear restrictions', exact: true })).toHaveCount(0);
+	await page.getByTestId('pane-delete').click();
+}

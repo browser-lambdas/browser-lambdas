@@ -1,6 +1,7 @@
 import { applyFunctionCodeUpdate } from '../../shared/functionUpdates.js';
 import { applyTriggerDefinitionUpdate } from '../../shared/triggerUpdates.js';
 import { newStyle } from '../../shared/records.js';
+import { getProjectSettings, getProjectCategorySettings } from '../../shared/projectPolicy.js';
 
 export function applyPendingItemToCollections(item, lambdas, styles, triggers) {
   const incoming = item.incoming;
@@ -31,5 +32,17 @@ export function applyPendingItemToCollections(item, lambdas, styles, triggers) {
   }
   if (item.type === 'trigger') {
     applyTriggerDefinitionUpdate(triggers, { ...incoming, project: incoming.project || project });
+  }
+}
+
+export async function assertPendingBatchAllowed(batch) {
+  const settings = await getProjectSettings();
+  const categories = { lambda: 'functions', style: 'styles', trigger: 'triggers' };
+  for (const item of batch.items || []) {
+    const category = categories[item.type];
+    if (!category) throw new Error('This pending batch contains an unsupported resource type.');
+    const project = item.project || item.incoming?.project || item.previous?.project || batch.project || 'default';
+    const policy = getProjectCategorySettings(settings, project, category);
+    if (policy.lock) throw new Error(`${category} updates are locked for project "${project}".`);
   }
 }

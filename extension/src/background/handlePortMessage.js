@@ -1,6 +1,7 @@
 import { appendActivityLog, log } from './activityLog.js';
 import { handleItemAccess } from './itemAccess.js';
 import { executeLambda } from './executeLambda.js';
+import { verifiedInvocation, finishInvocation, clearTabInvocations } from './invocations.js';
 async function waitUntilTabReady(tabId, timeout) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
@@ -32,14 +33,16 @@ export function handlePortMessage(port, tabId, portMapByTabId, requestToPortMap)
                 break;
             }
             case 'EXECUTE_LAMBDA': {
-                const { tabId, userInput, requestId, depth = 0 } = msg;
+                const { tabId: targetTabId, userInput, requestId } = msg;
                 if (tabId != null) {
                     portMapByTabId.set(tabId, port);
                     requestToPortMap.set(requestId, { port, type: 'FUNCTION_CALL_REQUEST' });
                 }
                 let result;
                 try {
-                    result = await executeLambda(tabId, userInput, requestId, depth);
+                    const caller = await verifiedInvocation(msg.invocationToken, tabId);
+                    if (!caller) throw new Error('Nested execution blocked: the calling function could not be verified or its access was revoked.');
+                    result = await executeLambda(targetTabId ?? tabId, userInput, requestId, caller.callers.length, null, caller.callers);
                 }
                 catch (error) {
                     result = { started: false, error: error?.message || String(error) };
@@ -60,6 +63,7 @@ export function handlePortMessage(port, tabId, portMapByTabId, requestToPortMap)
             }
             case 'LAMBDA_RESULT': {
                 const { id, result } = msg;
+                if (!finishInvocation(msg.invocationToken, tabId, id, result)) break;
                 const entry = requestToPortMap.get(id);
                 if (entry) {
                     const { port, type } = entry;
@@ -87,6 +91,20 @@ export function handlePortMessage(port, tabId, portMapByTabId, requestToPortMap)
                     requestToPortMap.set(id, { port, type: 'TAB_OPERATION_REQUEST' });
                 }
                 switch (operation) {
+                    case 'CLOSE_CURRENT_TAB': {
+                        requestToPortMap.delete(id);
+                        try {
+                            if (!Number.isInteger(tabId) || !(await verifiedInvocation(msg.invocationToken, tabId))) {
+                                throw new Error('The calling tab or function could not be verified. Run the function again.');
+                            }
+                            await chrome.tabs.remove(tabId);
+                            // Closing the source tab also disconnects its response port.
+                        } catch (error) {
+                            try { port.postMessage({ type: 'TAB_OPERATION_RESPONSE', id, value: false, error: error.message }); }
+                            catch { /* The tab may already have disconnected. */ }
+                        }
+                        break;
+                    }
                     case 'NEW_TAB': {
                         const tab = await chrome.tabs.create({
                             url: options.url ?? 'about:blank',
@@ -150,6 +168,7 @@ export function handlePortMessage(port, tabId, portMapByTabId, requestToPortMap)
     });
     port.onDisconnect.addListener(() => {
         if (tabId != null) {
+            clearTabInvocations(tabId);
             portMapByTabId.delete(tabId);
             log.dbg(`Content-script port disconnected: tabId=${tabId}.`);
         }

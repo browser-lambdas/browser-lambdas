@@ -1,0 +1,4 @@
+.setting-source { display: block; margin-top: 4px; color: var(--muted-foreground, var(--muted)); font-size: 11px; line-height: 1.6; font-weight: 400; }
+.setting-source a, .setting-source button { color: var(--foreground, var(--text)); text-decoration: underline; text-underline-offset: 3px; }
+.setting-source button { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; }
+.setting-source :focus-visible { outline: 2px solid var(--green, var(--brand-pan-green)); outline-offset: 3px; }

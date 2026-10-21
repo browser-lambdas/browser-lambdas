@@ -12,6 +12,25 @@ const BODY_ID = 'shell-body';
 const SHELL_CODE_BG = '#160e16';
 const SHELL_FONT_STACK = "'Fira Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
 window.clearShellUiHistory = () => {};
+let shellThemeReadId = 0;
+async function refreshShellTheme() {
+    const readId = ++shellThemeReadId;
+    try {
+        const theme = await (window.getAllowedShellTheme ? window.getAllowedShellTheme() : getSelectedShellTheme());
+        if (readId !== shellThemeReadId || !document.getElementById(DEFAULT_STYLE_ID)) return;
+        document.getElementById(USER_STYLE_ID)?.remove();
+        if (theme?.css) {
+            const userStyle = document.createElement('style');
+            userStyle.id = USER_STYLE_ID;
+            userStyle.textContent = theme.css;
+            document.head.appendChild(userStyle);
+        }
+    } catch (error) {
+        if (readId !== shellThemeReadId) return;
+        document.getElementById(USER_STYLE_ID)?.remove();
+        console.warn('Could not apply shell style:', error);
+    }
+}
 const showShell = async (tabId, useHistory = false) => {
     let shellContainer = document.getElementById(SHELL_ID);
     const lambdas = await getLambdas();
@@ -273,13 +292,7 @@ const showShell = async (tabId, useHistory = false) => {
         defaultStyle.id = DEFAULT_STYLE_ID;
         defaultStyle.textContent = defaultCSS;
         document.head.appendChild(defaultStyle);
-        const selectedTheme = await getSelectedShellTheme();
-        if (selectedTheme?.css) {
-            const userStyle = document.createElement('style');
-            userStyle.id = USER_STYLE_ID;
-            userStyle.textContent = selectedTheme.css;
-            document.head.appendChild(userStyle);
-        }
+        await refreshShellTheme();
         const titleBar = document.createElement('div');
         titleBar.id = TITLEBAR_ID;
         titleBar.className = 'shell-titlebar';

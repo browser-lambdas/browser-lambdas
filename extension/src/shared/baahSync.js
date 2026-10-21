@@ -1,6 +1,7 @@
 const WS_LOCK_KEY = 'local_storage_key_ws_lock';
 const LAMBDA_FUNCTIONS_KEY = 'local_storage_key_lambdas';
 const STYLES_KEY = 'local_storage_key_shellcss';
+const TRIGGERS_KEY = 'local_storage_key_triggers';
 const LOOPBACK_HOST = '127.0.0.1';
 const AUTH_PROTOCOL_VERSION = 1;
 const MAX_PUSH_MESSAGE_BYTES = 50 * 1024 * 1024;
@@ -17,7 +18,6 @@ function initBaahSync() {
     let wsPort = 4455;
     let pollHandle = 0;
     let tabId;
-    let hasUpdates = false;
     let activeBatch = null;
 
     const textEncoder = new TextEncoder();
@@ -174,7 +174,6 @@ function initBaahSync() {
             expectedCounts: msg.counts || {},
             counts: { lambdas: 0, styles: 0, triggers: 0 },
             manifest: msg.manifest || null,
-            requireReview: await getBaahRequireReview(),
             items: []
         };
         pushDebug('started batch', { batchId: activeBatch.id, project: activeBatch.project, expectedCounts: activeBatch.expectedCounts });
@@ -244,22 +243,19 @@ function initBaahSync() {
                 if (!(await isActiveBatchMessage(msg))) return;
                 const { filename, sourcePath, bundle, project = activeBatch.project } = msg;
                 activeBatch.counts.lambdas += 1;
-                if (activeBatch.requireReview) activeBatch.items.push({ type: 'lambda', project: project || 'default', filename, sourcePath, bundle });
-                else handleLambdaUpdate(project, filename, bundle);
+                activeBatch.items.push({ type: 'lambda', project: project || 'default', filename, sourcePath, bundle });
             }
             if (msg.type === 'style') {
                 if (!(await isActiveBatchMessage(msg))) return;
                 const { filename, content, project = activeBatch.project } = msg;
                 activeBatch.counts.styles += 1;
-                if (activeBatch.requireReview) activeBatch.items.push({ type: 'style', project, filename, content });
-                else handleStyleUpdate(project, filename, content);
+                activeBatch.items.push({ type: 'style', project: project || 'default', filename, content });
             }
             if (msg.type === 'trigger') {
                 if (!(await isActiveBatchMessage(msg))) return;
                 const { name, patterns, commands, project = activeBatch.project } = msg;
                 activeBatch.counts.triggers += 1;
-                if (activeBatch.requireReview) activeBatch.items.push({ type: 'trigger', project: project || 'default', name, patterns, commands });
-                else handleTriggerUpdate(project, name, patterns, commands);
+                activeBatch.items.push({ type: 'trigger', project: project || 'default', name, patterns, commands });
             }
             if (msg.type === 'batch-end') {
                 if (!(await isActiveBatchMessage(msg))) return;
@@ -271,25 +267,33 @@ function initBaahSync() {
                     return;
                 }
                 updateQueue = updateQueue.then(async () => {
-                    if (completedBatch.requireReview) {
-                        await stageBaahPushBatch({ id: completedBatch.id, project: completedBatch.project, counts: completedBatch.counts, manifest: completedBatch.manifest, items: completedBatch.items });
-                        window.dispatchEvent(new CustomEvent('baah-pending-batches-updated'));
-                        log.dbg(`Sync batch staged for review: batchId=${completedBatch.id}, project="${completedBatch.project}", counts=${JSON.stringify(completedBatch.counts)}.`);
-                        await sendBatchAck({ type: 'batch-received', batchId: completedBatch.id, status: 'pending-review', counts: completedBatch.counts });
-                        socket?.close(1000, 'push staged for review');
+                    const [{ applyFunctionCodeUpdate }, { applyTriggerDefinitionUpdate }, { newStyle }] = await Promise.all([
+                        import('./functionUpdates.js'), import('./triggerUpdates.js'), import('./records.js')
+                    ]);
+                    const policy = await readBatchPolicy();
+                    const stored = await chrome.storage.local.get([LAMBDA_FUNCTIONS_KEY, STYLES_KEY, TRIGGERS_KEY]);
+                    const collections = {
+                        functions: JSON.parse(stored[LAMBDA_FUNCTIONS_KEY] || '[]'),
+                        styles: JSON.parse(stored[STYLES_KEY] || '[]'),
+                        triggers: JSON.parse(stored[TRIGGERS_KEY] || '[]')
+                    };
+                    if (checkBatchPolicy(batchTargets(completedBatch, collections), policy)) {
+                        await stageCompletedBatch(completedBatch);
                         return;
                     }
-                    await handleManifestDeletes(completedBatch.project, completedBatch.manifest);
-                    const shouldReload = hasUpdates;
+                    applyBatchToCollections(completedBatch, collections, { applyFunctionCodeUpdate, applyTriggerDefinitionUpdate, newStyle });
+                    await chrome.storage.local.set({
+                        [LAMBDA_FUNCTIONS_KEY]: JSON.stringify(collections.functions),
+                        [STYLES_KEY]: JSON.stringify(collections.styles),
+                        [TRIGGERS_KEY]: JSON.stringify(collections.triggers)
+                    });
                     await sendBatchAck({ type: 'batch-applied', batchId: completedBatch.id, status: 'applied', counts: completedBatch.counts });
-                    if (hasUpdates) {
-                        log.dbg(`Sync batch applied: batchId=${completedBatch.id}, project="${completedBatch.project}", counts=${JSON.stringify(completedBatch.counts)}.`);
-                        hasUpdates = false;
-                    }
-                    else {
-                        log.dbg(`Sync batch completed without changes: batchId=${completedBatch.id}, project="${completedBatch.project}".`);
-                    }
-                    socket?.close(1000, shouldReload ? 'push applied' : 'push acknowledged');
+                    log.dbg(`Sync batch applied: batchId=${completedBatch.id}, project="${completedBatch.project}".`);
+                    socket?.close(1000, 'push applied');
+                }).catch(async (error) => {
+                    log.err(`Sync batch rejected: ${error.message}`, error);
+                    await sendBatchAck({ type: 'batch-rejected', batchId: completedBatch.id, reason: error.message });
+                    socket?.close(1000, 'push rejected');
                 });
             }
             }).catch((error) => {
@@ -311,85 +315,61 @@ function initBaahSync() {
             socket.close();
         };
     }
-    async function handleManifestDeletes(project, manifest) {
-        if (!manifest) return;
-        if (Array.isArray(manifest.lambdas)) {
-            const keep = new Set(manifest.lambdas);
-            const all = await chrome.storage.local.get(LAMBDA_FUNCTIONS_KEY);
-            const lambdas = JSON.parse(all[LAMBDA_FUNCTIONS_KEY] || '[]');
-            const next = lambdas.filter((lambda) => (lambda.project || 'default') !== project || keep.has(lambda.name));
-            if (next.length !== lambdas.length) {
-                hasUpdates = true;
-                await chrome.storage.local.set({ [LAMBDA_FUNCTIONS_KEY]: JSON.stringify(next) });
+    async function stageCompletedBatch(batch) {
+        await stageBaahPushBatch({ id: batch.id, project: batch.project, counts: batch.counts, manifest: batch.manifest, items: batch.items });
+        window.dispatchEvent(new CustomEvent('baah-pending-batches-updated'));
+        log.dbg(`Sync batch staged for review: batchId=${batch.id}, project="${batch.project}".`);
+        await sendBatchAck({ type: 'batch-received', batchId: batch.id, status: 'pending-review', counts: batch.counts });
+        socket?.close(1000, 'push staged for review');
+    }
+    function batchTargets(batch, collections) {
+        const targets = new Map();
+        const add = (project, category) => targets.set(JSON.stringify([project || 'default', category]), { project: project || 'default', category });
+        const categories = { lambda: 'functions', style: 'styles', trigger: 'triggers' };
+        for (const item of batch.items) add(item.project || batch.project, categories[item.type]);
+        const project = batch.project || 'default';
+        for (const [category, manifestKey] of [['functions', 'lambdas'], ['styles', 'styles'], ['triggers', 'triggers']]) {
+            if (!Array.isArray(batch.manifest?.[manifestKey])) continue;
+            const keep = new Set(batch.manifest[manifestKey]);
+            if (collections[category].some((item) => (item.project || 'default') === project && !keep.has(item.name))) add(project, category);
+        }
+        return [...targets.values()];
+    }
+    async function readBatchPolicy() {
+        const { getProjectSettings, getProjectCategorySettings } = await import('./projectPolicy.js');
+        const [settings, baahPollChanges, baahRequireReview] = await Promise.all([
+            getProjectSettings(), getBaahPollChanges(), getBaahRequireReview()
+        ]);
+        return { settings, baahPollChanges, baahRequireReview, getProjectCategorySettings };
+    }
+    function checkBatchPolicy(targets, { settings, baahPollChanges, baahRequireReview, getProjectCategorySettings }) {
+        if (!baahPollChanges) throw new Error('Polling is disabled globally.');
+        let requireReview = baahRequireReview;
+        for (const { project, category } of targets) {
+            const policy = getProjectCategorySettings(settings, project, category, { baahPollChanges, baahRequireReview });
+            if (policy.lock) throw new Error(`${category} updates are locked for project "${project}".`);
+            if (!policy.poll) throw new Error(`Polling is disabled for ${category} in project "${project}".`);
+            requireReview ||= policy.review;
+        }
+        return requireReview;
+    }
+    function applyBatchToCollections(batch, collections, { applyFunctionCodeUpdate, applyTriggerDefinitionUpdate, newStyle }) {
+        for (const item of batch.items) {
+            const project = item.project || batch.project || 'default';
+            if (item.type === 'lambda') applyFunctionCodeUpdate(collections.functions, { name: item.filename, project, func: item.bundle });
+            if (item.type === 'trigger') applyTriggerDefinitionUpdate(collections.triggers, { name: item.name, project, patterns: item.patterns, commands: item.commands });
+            if (item.type === 'style') {
+                const existing = collections.styles.find((style) => style.name === item.filename && (style.project || 'default') === project);
+                if (existing) existing.css = item.content;
+                else collections.styles.push(newStyle(item.filename, item.content, project));
             }
         }
-        if (Array.isArray(manifest.styles)) {
-            const keep = new Set(manifest.styles);
-            const all = await chrome.storage.local.get(STYLES_KEY);
-            const styles = JSON.parse(all[STYLES_KEY] || '[]');
-            const next = styles.filter((style) => (style.project || 'default') !== project || keep.has(style.name));
-            if (next.length !== styles.length) {
-                hasUpdates = true;
-                await chrome.storage.local.set({ [STYLES_KEY]: JSON.stringify(next) });
-            }
+        const project = batch.project || 'default';
+        for (const [category, manifestKey] of [['functions', 'lambdas'], ['styles', 'styles'], ['triggers', 'triggers']]) {
+            if (!Array.isArray(batch.manifest?.[manifestKey])) continue;
+            const keep = new Set(batch.manifest[manifestKey]);
+            collections[category] = collections[category].filter((item) => (item.project || 'default') !== project || keep.has(item.name));
         }
-        if (Array.isArray(manifest.triggers)) {
-            const keep = new Set(manifest.triggers);
-            const triggers = await getTriggers();
-            const next = triggers.filter((trigger) => (trigger.project || 'default') !== project || keep.has(trigger.name));
-            if (next.length !== triggers.length) {
-                hasUpdates = true;
-                await storeTriggers(next);
-            }
-        }
-    }
-    function handleLambdaUpdate(project, filename, bundle) {
-        updateQueue = updateQueue.then(async () => {
-            const all = await chrome.storage.local.get(LAMBDA_FUNCTIONS_KEY);
-            const lambdas = JSON.parse(all[LAMBDA_FUNCTIONS_KEY] || '[]');
-            const existing = lambdas.find((l) => l.name === filename && (l.project || 'default') === project);
-            if (!existing || existing.func !== bundle) {
-                const { applyFunctionCodeUpdate } = await import('./functionUpdates.js');
-                applyFunctionCodeUpdate(lambdas, { name: filename, project, func: bundle });
-                hasUpdates = true;
-                log.dbg(`Function updated from sync: project="${project}", name="${filename}".`);
-            }
-            await chrome.storage.local.set({ [LAMBDA_FUNCTIONS_KEY]: JSON.stringify(lambdas) });
-        });
-    }
-    function handleStyleUpdate(project, filename, content) {
-        updateQueue = updateQueue.then(async () => {
-            const all = await chrome.storage.local.get(STYLES_KEY);
-            const styles = JSON.parse(all[STYLES_KEY] || '[]');
-            const existing = styles.find((s) => s.name === filename && (s.project || 'default') === project);
-            if (existing) {
-                if (existing.css !== content) {
-                    existing.css = content;
-                    hasUpdates = true;
-                    log.dbg(`Style updated from sync: project="${project}", name="${filename}".`);
-                }
-            }
-            else {
-                const { newStyle } = await import('./records.js');
-                styles.push(newStyle(filename, content, project));
-                hasUpdates = true;
-                log.dbg(`Style added from sync: project="${project}", name="${filename}".`);
-            }
-            await chrome.storage.local.set({ [STYLES_KEY]: JSON.stringify(styles) });
-        });
-    }
-    function handleTriggerUpdate(project, name, patterns, commands) {
-        updateQueue = updateQueue.then(async () => {
-            const triggers = await getTriggers();
-            const existing = triggers.find((t) => t.name === name && (t.project || 'default') === (project || 'default'));
-            if (!existing || JSON.stringify(existing.patterns) !== JSON.stringify(patterns) || JSON.stringify(existing.commands) !== JSON.stringify(commands)) {
-                const { applyTriggerDefinitionUpdate } = await import('./triggerUpdates.js');
-                applyTriggerDefinitionUpdate(triggers, { name, project, patterns, commands });
-                hasUpdates = true;
-                log.dbg(`Trigger updated from sync: project="${project}", name="${name}".`);
-            }
-            await storeTriggers(triggers);
-        });
     }
     async function acquireLock() {
         const now = Date.now();
@@ -403,6 +383,11 @@ function initBaahSync() {
     }
     async function checkLock() {
         if (!sharedSecret || sharedSecret === 'not-found') return;
+        const poll = await getBaahPollChanges();
+        if (!poll) {
+            socket?.close(1000, 'polling disabled');
+            return;
+        }
         if (await acquireLock()) {
             if (!socket) {
                 tryConnect();
