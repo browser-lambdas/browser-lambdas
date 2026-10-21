@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
-	"name": "browser-lambdas",
-	"description": "Productivity tool for developers",
+	"name": "Browser Lambdas",
+	"description": "Lambda functions and terminal for your browser.",
 	"permissions": [
 		"storage",
 		"tabs",

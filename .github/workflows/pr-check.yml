@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [ "**" ]
 
+permissions:
+  contents: read
+
 jobs:
   cli:
     runs-on: ubuntu-latest
@@ -31,12 +34,36 @@ jobs:
         working-directory: extension
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Detect E2E changes
+        id: e2e
+        shell: bash
+        working-directory: .
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          run=true
+          if git diff --no-renames --name-only -z "$BASE_SHA...$HEAD_SHA" > /tmp/pr-changed-files; then
+            run=false
+            while IFS= read -r -d '' file; do
+              case "$file" in
+                *.md|*.MD|extension/LICENSE|cli/LICENSE|extension/publish/*) continue ;;
+                extension/*|cli/*|.github/workflows/pr-check.yml) run=true; break ;;
+              esac
+            done < /tmp/pr-changed-files
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "Run E2E: $run"
       - run: npm ci
       - run: npm ci --prefix ../cli
       - run: npm run check
       - run: npm run test:unit
       - run: bash ./compile.sh
-      - run: npm run test:e2e -- --headless --reaction-time=1000
+      - name: E2E tests
+        if: steps.e2e.outputs.run != 'false'
+        run: npm run test:e2e -- --headless --reaction-time=1000
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
