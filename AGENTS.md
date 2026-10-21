@@ -24,6 +24,12 @@
 - Generally support settings at resource, project and global levels. The most specific explicit setting wins; unset values inherit, falling back to the built-in safe default.
 - Only explicit user choices through trusted controls may relax safeguards. Malicious actors or untrusted content must not make that choice for users.
 
+## Browser access
+
+- Never launch, inspect, attach to, or control the user's personal browser, profiles, tabs, or installed extensions. Do not request access to them as a fallback.
+- Use Codex's in-app browser or a separate automation browser with a fresh, isolated profile for browser work. Never reuse the user's browser profile.
+- If an agent-owned browser cannot perform a check, report the limitation and leave that check to the user. This rule applies to all nested instructions and browser tooling.
+
 ## Code
 
 - Look for existing implementations and patterns before introducing new ones. Reuse or refactor them when appropriate.
@@ -44,7 +50,7 @@
 - Frequently run scripts, including test runners, should support quiet execution with detailed output in a temporary log. Preserve failure exit codes and report the result and log path briefly.
 - For existing noisy commands, redirect output to a temporary log. Search it for relevant failures and read bounded excerpts instead of dumping it into the conversation.
 - Run focused checks during implementation. Run the full suite only at the final verification stage, before claiming done.
-- Inspect UI changes in a browser and check their appearance and relevant interactions before claiming done.
+- Inspect UI changes only in an agent-owned browser, following Browser access above. If unavailable, state that visual verification remains for the user.
 - If a required check cannot run or fails, state that clearly; do not claim verified completion.
 
 ## Git

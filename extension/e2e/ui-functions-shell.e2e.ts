@@ -35,5 +35,5 @@ test('run lambda via shell', async ({ page, extensionId, localTestPage, reaction
 	await shellInput.press('Enter');
 
 	console.log('Checking shell output...');
-	await expect.poll(() => page.frameLocator('#browser-lambdas-shell').locator('#shell-outputs').innerText()).toMatch(/e2e/);
+	await expect(page.frameLocator('#browser-lambdas-shell').locator('#shell-outputs p')).toHaveText(['> e2e-test', 'e2e']);
 });

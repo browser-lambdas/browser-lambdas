@@ -3,15 +3,21 @@ import test from 'node:test';
 import { executeLambda } from '../src/background/executeLambda.js';
 import { runTriggers } from '../src/background/runTriggers.js';
 import { applyFunctionCodeUpdate } from '../src/shared/functionUpdates.js';
+import { finishInvocation, clearTabInvocations } from '../src/background/invocations.js';
 
 let db, injected, handshakes;
 const lambda = (extra = {}) => ({ id: 'f', name: 'test', func: 'console.log("PRIVATE_CODE");', allowedWorlds: ['user_scripts'], urlAllowlistEnabled: true, urlPatterns: ['https://example.com/*'], ...extra });
 function setup(lambdas = [lambda()]) {
+    clearTabInvocations(1);
+    clearTabInvocations(2);
     db = { local_storage_key_lambdas: JSON.stringify(lambdas) };
     injected = []; handshakes = [];
     globalThis.chrome = {
         storage: { local: { get: async (key) => ({ [key]: db[key] }), set: async (value) => Object.assign(db, value) } },
-        tabs: { get: async (id) => ({ url: id === 1 ? 'https://example.com/page' : 'https://other.test/' }), sendMessage: async (...args) => handshakes.push(args) },
+        tabs: { get: async (id) => ({ url: id === 1 ? 'https://example.com/page' : 'https://other.test/' }), sendMessage: async (tabId, context) => {
+            handshakes.push([tabId, context]);
+            finishInvocation(context.invocationToken, tabId, context.requestId);
+        } },
         scripting: { executeScript: async (args) => { injected.push(args); return [{}]; } },
         userScripts: { execute: async (args) => { injected.push(args); return [{}]; } }
     };
@@ -25,9 +31,7 @@ test('function authorization precedes injection and handshake for every world/pa
                     for (const tabId of [1, 2]) {
                         setup([lambda({ world, allowedWorlds })]);
                         db.local_storage_key_allow_main_world_functions = global;
-                        const available = [allowedWorlds.includes('user_scripts') && 'USER_SCRIPT', global && allowedWorlds.includes('main') && 'MAIN'].filter(Boolean);
-                        const resolved = available.includes(world) ? world : available[0] || world;
-                        const main = prefix === '@main-world ' || (!prefix && resolved === 'MAIN');
+                        const main = prefix === '@main-world ' || (!prefix && world === 'MAIN');
                         const allowed = tabId === 1 && allowedWorlds.includes(main ? 'main' : 'user_scripts') && (!main || global);
                         const result = await executeLambda(tabId, `${prefix}test`, 'request');
                         assert.equal(result?.started !== false, allowed);
@@ -84,7 +88,7 @@ test('CLI auto-apply and reviewed code updates preserve current local permission
     const created = applyFunctionCodeUpdate(collection, { name: 'new', project: 'project', func: 'new', allowedWorlds: ['main'], urlAllowlistEnabled: true, urlPatterns: ['*'], world: 'MAIN' });
     assert.deepEqual(created.allowedWorlds, ['user_scripts']);
     assert.deepEqual(created.urlPatterns, []);
-    assert.equal(created.world, 'USER_SCRIPT');
+    assert.equal(created.world, '');
     assert.equal(collection.length, 2);
 });
 

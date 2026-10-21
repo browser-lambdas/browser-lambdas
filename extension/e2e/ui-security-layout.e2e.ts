@@ -27,10 +27,10 @@ for (const [tab, kind] of [['functions', 'function'], ['storage', 'storage'], ['
 			await expect(page.getByLabel('Code', { exact: true })).toBeVisible();
 			await page.getByLabel('Code', { exact: true }).fill('console.log("code");');
 			await expect(security.getByTestId('pane-world')).toBeVisible();
-			await expect(security.getByTestId('pane-world').locator('option')).toHaveText(['User world', 'Main world']);
+			await expect(security.getByTestId('pane-world').locator('option')).toHaveText(['Use project default (User world)', 'User world', 'Main world']);
 		} else await expect(security.getByTestId('pane-world')).toHaveCount(0);
 		const patterns = page.getByTestId(`${kind}-url-patterns`);
-		const toggle = security.getByRole('switch', { name: 'Only allow on specific URLs', exact: true });
+		const toggle = security.getByRole('switch', { name: tab === 'functions' ? 'Only allow execution on specific URLs' : 'Only allow on specific URLs', exact: true });
 		await expect(toggle).not.toBeChecked();
 		await expect(patterns).toBeDisabled();
 		await toggle.check();
@@ -59,7 +59,7 @@ test('trigger panel orders paths, commands and Security without an optional allo
 	await expect(page.getByTestId('trigger-security')).toBeHidden();
 	await page.getByRole('button', { name: 'Show settings' }).click();
 	const security = page.getByTestId('trigger-security');
-	await expect(security.getByRole('switch', { name: 'Allow execution in user world', exact: true })).toBeVisible();
+	await expect(security.getByRole('switch', { name: 'Run automatically', exact: true })).toBeChecked();
 	await expect(security.getByRole('switch', { name: 'Only allow on specific URLs' })).toHaveCount(0);
 	await expect(security.locator('textarea, select')).toHaveCount(0);
 	const order = await page.locator('.trigger-form').evaluate((form) => [...form.querySelectorAll('textarea, section')].map((el) => el.getAttribute('data-testid')));
@@ -110,21 +110,26 @@ test('function dropdown follows grants and shows Disabled with neither world', a
 	await security.locator('[data-world="user_scripts"]').uncheck();
 	await expect(world).toBeDisabled();
 	await expect(world.locator('option:checked')).toHaveText('Disabled');
+	await expect(world.locator('option')).toHaveCount(1);
+	await expect(world).toHaveAttribute('title', 'No execution worlds enabled');
 	await page.evaluate(() => chrome.storage.local.set({ local_storage_key_allow_main_world_functions: true }));
 	await security.locator('[data-world="main"]').check();
 	await expect(world).toBeEnabled();
+	await expect(world).toHaveValue('');
+	await expect(world.locator('option:checked')).toHaveText('Use project default (User world, disabled)');
+	await world.selectOption('MAIN');
 	await expect(world).toHaveValue('MAIN');
 	await expect(world.locator('option[value="USER_SCRIPT"]')).toHaveJSProperty('disabled', true);
-	await expect(security.getByRole('link', { name: 'General Settings' })).toHaveAttribute('href', './settings.html#main-world-functions');
+	await expect(security.getByRole('link', { name: 'global settings', exact: true }).last()).toHaveAttribute('href', './settings.html#main-world-functions');
 	await expect(security).toContainText('dangerous');
 });
 
-for (const tab of ['functions', 'storage', 'secrets', 'triggers']) {
+for (const tab of ['functions', 'storage', 'secrets']) {
 	test(`${tab} security link scrolls to its global setting after loading`, async ({ page, extensionId }) => {
 		await page.goto(`chrome-extension://${extensionId}/workspace.html#${tab}`);
 		await page.getByTestId(`sidebar-${tab}-add`).click();
 		await page.getByRole('button', { name: 'Show settings' }).click();
-		const link = page.getByRole('link', { name: 'General Settings' });
+		const link = page.getByRole('link', { name: 'global settings', exact: true }).last();
 		await expect(link).toHaveAttribute('href', `./settings.html#main-world-${tab}`);
 		// Visit the link in this tab so the assertion targets the loaded settings page.
 		await page.goto(new URL((await link.getAttribute('href'))!, page.url()).href);

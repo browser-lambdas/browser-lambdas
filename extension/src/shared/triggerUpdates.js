@@ -1,7 +1,6 @@
 import { newTrigger } from './records.js';
 
-// Patterns and commands belong to the trigger definition. World grants are local
-// permissions and must not be replaced by a CLI payload or an old review snapshot.
+// Sync definitions without replacing the local automatic-execution setting.
 export function applyTriggerDefinitionUpdate(triggers, incoming) {
     const project = incoming.project || 'default';
     const existing = triggers.find((trigger) => trigger.name === incoming.name && (trigger.project || 'default') === project);

@@ -64,7 +64,7 @@ const handleFunctionCall = async (msg, sessionKey, channelId) => {
             tabId: msg.tabId ?? tabId,
             requestId: msg.id,
             userInput: msg.userInput,
-            depth: msg.depth
+            invocationToken: channelToPort.get(channelId)?.invocationToken
         });
     }
     catch (e) {
@@ -76,11 +76,23 @@ const handleFunctionCall = async (msg, sessionKey, channelId) => {
 };
 if (typeof window !== 'undefined') {
     const handshakeMap = new Map();
+    const failHandshake = (hs) => {
+        clearTimeout(hs.timeout);
+        handshakeMap.delete(hs.aToken);
+        channelToPort.get(hs.requestId)?.port.close();
+        channelToPort.delete(hs.requestId);
+        const error = 'The function could not establish its runtime connection.';
+        log.err(`Function handshake failed: requestId=${hs.requestId}.`);
+        sendToBackground({ type: 'LAMBDA_RESULT', id: hs.requestId, result: { error }, invocationToken: hs.invocationToken })
+            .catch((err) => log.err('Unable to report the failed function handshake.', err));
+    };
     if (typeof chrome !== 'undefined') {
         chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             if (msg.type === 'BACKGROUND_INIT_HANDSHAKE') {
                 log.dbg(`Function handshake initiated: requestId=${msg.requestId}.`);
-                handshakeMap.set(msg.aToken, msg);
+                const hs = { ...msg };
+                hs.timeout = setTimeout(() => failHandshake(hs), 1000);
+                handshakeMap.set(msg.aToken, hs);
                 window.postMessage({ type: 'CONTENT_SCRIPT_INIT', qToken: msg.qToken }, '*');
             }
             if (msg.action === 'OPEN_SHELL') {
@@ -115,14 +127,10 @@ if (typeof window !== 'undefined') {
         const handshakeContentToken = hs.handshakeContentToken;
         const chan = new MessageChannel();
         const port = chan.port1;
-        channelToPort.set(channelId, { port, sessionKey });
+        channelToPort.set(channelId, { port, sessionKey, invocationToken: hs.invocationToken });
         log.dbg(`Opening secure function channel: requestId=${channelId}.`);
         window.postMessage({ type: 'CONTENT_SCRIPT_HANDSHAKE', handshakeId }, '*', [chan.port2]);
         let done = false;
-        const to = setTimeout(() => {
-            log.err(`Function handshake timed out: requestId=${channelId}.`);
-            port.close();
-        }, 1000);
         port.onmessage = async ({ data }) => {
             let msg;
             try {
@@ -130,12 +138,11 @@ if (typeof window !== 'undefined') {
             }
             catch (err) {
                 log.err(`Secure function message could not be decrypted: requestId=${channelId}.`, err);
-                port.close();
+                failHandshake(hs);
                 return;
             }
             if (!done) {
                 if (msg.type === 'HANDSHAKE_LAMBDA' && msg.token === handshakeLambdaToken) {
-                    clearTimeout(to);
                     done = true;
                     const resp = await encrypt({ type: 'HANDSHAKE_CONTENT', token: handshakeContentToken }, sessionKey);
                     log.dbg(`Secure function channel established: requestId=${channelId}.`);
@@ -144,7 +151,13 @@ if (typeof window !== 'undefined') {
                 }
                 return;
             }
+            // Only the trusted background handshake supplies caller identity.
+            msg.invocationToken = hs.invocationToken;
+            msg.executionWorld = hs.executionWorld;
             switch (msg.type) {
+                case 'LAMBDA_READY':
+                    clearTimeout(hs.timeout);
+                    break;
                 case 'SHELL_OUTPUT':
                     appendShellOutput(msg.level, Array.isArray(msg.values) ? msg.values : []);
                     break;
@@ -160,14 +173,13 @@ if (typeof window !== 'undefined') {
                     sendToBackground(msg);
                     break;
                 case 'LAMBDA_RESULT':
+                    msg.id = hs.requestId;
                     await sendToBackground(msg);
                     channelToPort.delete(channelId);
                     break;
                 case 'GET_SECRET_REQUEST':
                 case 'GET_STORAGE_REQUEST':
                 case 'SET_STORAGE_REQUEST': {
-                    // The injected caller cannot choose its authorization world.
-                    msg.executionWorld = hs.executionWorld;
                     const r = await sendToBackground(msg);
                     const e = await encrypt(r, sessionKey);
                     port.postMessage(e);

@@ -21,6 +21,13 @@ export function evaluateAccessPolicy({ policy, executionWorld, url, allowMainWor
     if (!world) reasons.push('unverified_world');
     if (world === 'main' && allowMainWorld !== true) reasons.push('global_main_disabled');
     if (world && !normalized.allowedWorlds.includes(world)) reasons.push('world_denied');
+    reasons.push(...evaluateUrlAccessPolicy({ policy: normalized, url }).reasons);
+    return { allowed: reasons.length === 0, reasons };
+}
+
+export function evaluateUrlAccessPolicy({ policy, url }) {
+    const normalized = normalizeAccessPolicy(policy);
+    const reasons = [];
     if (!url) reasons.push('page_denied');
     else if (normalized.urlAllowlistEnabled) {
         if (!normalized.urlPatterns.length) reasons.push('no_pages');
@@ -32,6 +39,10 @@ export function evaluateAccessPolicy({ policy, executionWorld, url, allowMainWor
 }
 
 export function validateAccessPolicy(item) {
+    for (const [enabled, list] of [['projectsEnabled', 'allowedProjects'], ['functionsEnabled', 'allowedFunctions']]) {
+        if (Object.hasOwn(item, enabled) && typeof item[enabled] !== 'boolean') throw new Error('Invalid caller restriction.');
+        if (Object.hasOwn(item, list) && (!Array.isArray(item[list]) || item[list].some((name) => typeof name !== 'string'))) throw new Error('Caller restrictions must be lists of names.');
+    }
     const policy = normalizeAccessPolicy(item);
     if (!policy.urlAllowlistEnabled) return;
     for (const pattern of policy.urlPatterns) {
@@ -57,7 +68,14 @@ export function normalizeStoragePolicy(item = {}) {
     const policy = normalizeAccessPolicy(item);
     const grants = (field) => Object.hasOwn(item, field)
         ? normalizeAccessPolicy({ allowedWorlds: item[field] }).allowedWorlds : policy.allowedWorlds;
-    return { ...policy, allowedWorlds: grants('allowedReadWorlds').filter((world) => grants('allowedWriteWorlds').includes(world)) };
+    return { ...policy, ...normalizeCallerRestrictions(item), allowedWorlds: grants('allowedReadWorlds').filter((world) => grants('allowedWriteWorlds').includes(world)) };
+}
+
+export function normalizeCallerRestrictions(item = {}) {
+    const normalized = {};
+    for (const key of ['projectsEnabled', 'functionsEnabled']) if (Object.hasOwn(item, key)) normalized[key] = item[key] === true;
+    for (const key of ['allowedProjects', 'allowedFunctions']) if (Object.hasOwn(item, key)) normalized[key] = Array.isArray(item[key]) ? [...new Set(item[key].filter((name) => typeof name === 'string').map((name) => name.trim()).filter(Boolean))] : [];
+    return normalized;
 }
 
 export function normalizeStorageItem(item) {

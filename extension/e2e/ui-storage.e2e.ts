@@ -1,6 +1,11 @@
 import { test, expect } from './fixtures';
+import { exerciseCallerRestrictions } from './caller-restrictions-ui';
 
 test.describe.configure({ timeout: 120_000 });
+
+test('storage caller restrictions persist, retain disabled lists and clear explicitly', async ({ page, extensionId }) => {
+	await exerciseCallerRestrictions(page, extensionId, 'storage');
+});
 
 test('storage ui operations', async ({ page, extensionId, reactionTime }) => {
 	const base = `chrome-extension://${extensionId}`;
@@ -152,7 +157,7 @@ test('storage policies preserve JSON values, validate patterns and show safe usa
 	await page.getByTestId('storage-url-allowlist').check();
 	await page.getByTestId('storage-url-patterns').fill('/[/');
 	await page.getByTestId('pane-save').click();
-	await expect(page.getByRole('alert')).toContainText('pattern is invalid');
+	await expect(page.getByRole('alert')).toHaveText('Check the allowed page patterns and caller name lists.');
 	await page.getByTestId('storage-url-patterns').fill('https://example.com/*');
 	await page.getByTestId('pane-save').click();
 	await expect(page.getByRole('alert')).toHaveCount(0);

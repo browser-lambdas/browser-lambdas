@@ -13,11 +13,11 @@ test('token is generated on request, copied without display, and rotated', async
 	await page.waitForTimeout(reactionTime);
 	await page.evaluate(() => chrome.storage.local.remove('local_storage_key_baah_token'));
 	await page.reload();
-	await expect(page.getByRole('heading', { name: 'Connection token', exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Token', exact: true })).toBeVisible();
 	await expect(page.locator('[data-action="copy-token"]')).toHaveCount(0);
 	const readToken = () => page.evaluate(async () => (await chrome.storage.local.get('local_storage_key_baah_token')).local_storage_key_baah_token);
 	expect(await readToken()).toBeUndefined();
-	await expect(page.getByText('No tokens yet..', { exact: true })).toBeVisible();
+	await expect(page.getByText('No tokens yet.', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Create new', exact: true }).click();
 	const remove = page.getByRole('button', { name: 'Delete', exact: true });
 	await expect(remove).toBeVisible();
@@ -38,7 +38,7 @@ test('token is generated on request, copied without display, and rotated', async
 	await expect(page.locator('time')).toHaveAttribute('datetime', new Date(createdAt).toISOString());
 	expect(await readToken()).toBe(first);
 	await remove.click();
-	await expect(page.getByText('No tokens yet..', { exact: true })).toBeVisible();
+	await expect(page.getByText('No tokens yet.', { exact: true })).toBeVisible();
 	expect(await readToken()).toBeUndefined();
 	expect(await page.evaluate(async () => (await chrome.storage.local.get('local_storage_key_baah_token_created_at')).local_storage_key_baah_token_created_at)).toBeUndefined();
 	await page.getByRole('button', { name: 'Create new', exact: true }).click();

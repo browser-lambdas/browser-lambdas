@@ -5,6 +5,7 @@ import { matchesUrlPattern } from '../shared/urlPattern.js';
 export async function runTriggers(tabId, url) {
     const triggers = await getTriggers();
     for (const trigger of triggers) {
+        if (trigger.enabled === false) continue;
         try {
             const patterns = trigger.patterns ?? [];
             if (patterns.some((p) => {
@@ -18,7 +19,10 @@ export async function runTriggers(tabId, url) {
             })) {
                 const commands = Array.isArray(trigger.commands) ? trigger.commands : [];
                 for (const cmd of commands) {
-                    await executeLambda(tabId, cmd, crypto.randomUUID(), 0, { id: trigger.id, name: trigger.name, project: trigger.project });
+                    const execution = await executeLambda(tabId, cmd, crypto.randomUUID(), 0, { id: trigger.id, name: trigger.name, project: trigger.project });
+                    if (execution.started === false) throw new Error(execution.error);
+                    const result = await execution.completion;
+                    if (result?.error) throw new Error(result.error);
                 }
             }
         }

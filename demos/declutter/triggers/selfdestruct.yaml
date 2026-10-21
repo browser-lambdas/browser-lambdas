@@ -1,0 +1,3 @@
+name: selfdestruct-auto
+patterns: ["http://*/*", "https://*/*"]
+commands: ["selfdestruct auto"]

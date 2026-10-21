@@ -88,7 +88,8 @@ test('functions ui operations', async ({ page, extensionId, reactionTime }) => {
 		.first()
 		.click();
 	await expect(page.locator('.code-editor')).toContainText('B');
-	await expect(page.getByTestId('pane-world').last()).toHaveValue('USER_SCRIPT');
+	await expect(page.getByTestId('pane-world').last()).toHaveValue('');
+	await expect(page.getByTestId('pane-world').last().locator('option:checked')).toHaveText('Use project default (User world)');
 
 	// Delete first lambda
 	await page.getByTestId('sidebar-functions-item').nth(0).click();
@@ -123,7 +124,7 @@ test('functions ui operations', async ({ page, extensionId, reactionTime }) => {
 		.first()
 		.click();
 	await expect(page.locator('.code-editor')).toContainText('B');
-	await expect(page.getByTestId('pane-world').last()).toHaveValue('USER_SCRIPT');
+	await expect(page.getByTestId('pane-world').last()).toHaveValue('');
 
 	// Refresh page and ensure sidebar is updated
 	await page.reload();

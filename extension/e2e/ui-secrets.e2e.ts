@@ -1,6 +1,11 @@
 import { test, expect } from './fixtures';
+import { exerciseCallerRestrictions } from './caller-restrictions-ui';
 
 test.describe.configure({ timeout: 120_000 });
+
+test('secret caller restrictions persist, retain disabled lists and clear explicitly', async ({ page, extensionId }) => {
+	await exerciseCallerRestrictions(page, extensionId, 'secrets');
+});
 
 test('manage secrets operations', async ({ page, extensionId, reactionTime }) => {
 	const base = `chrome-extension://${extensionId}`;

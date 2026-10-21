@@ -116,7 +116,8 @@
 			}),
 		tabs: {
 			this: () => ({
-				run: (cmd) => ctx.run(cmd)
+				run: (cmd) => ctx.run(cmd),
+				close: () => makeRequest('TAB_OPERATION_REQUEST', { operation: 'CLOSE_CURRENT_TAB' })
 			}),
 			new: (arg = {}) =>
 				new Promise(async (resolve) => {
@@ -168,7 +169,7 @@
 	const awaitHandshake = () =>
 		new Promise((resolve, reject) => {
 			let timeout;
-			window.addEventListener('message', async function initListener(event) {
+			window.addEventListener('message', function initListener(event) {
 				if (
 					event.source !== window ||
 					event.data?.type !== 'CONTENT_SCRIPT_HANDSHAKE' ||
@@ -188,16 +189,15 @@
 					try {
 						msg = await decrypt(event.data, sessionKey);
 					} catch (err) {
-						port.close();
+						clearTimeout(timeout);
 						reject(err);
 						return;
 					}
 
 					if (!handshakeComplete) {
 						if (msg.type !== 'HANDSHAKE_CONTENT' || msg.token !== handshakeContentToken) {
-							port.close();
 							clearTimeout(timeout);
-							reject();
+								reject(new Error('Function runtime handshake was not authenticated.'));
 							return;
 						}
 						handshakeComplete = true;
@@ -210,15 +210,14 @@
 					handleSecureMessage(msg);
 				};
 
-				await sendEncrypted({
+				timeout = setTimeout(() => {
+					// Keep the channel open to report the failure before closing it.
+					reject(new Error('Function runtime handshake timed out.'));
+				}, 1000);
+				sendEncrypted({
 					type: 'HANDSHAKE_LAMBDA',
 					token: handshakeLambdaToken
-				});
-
-				timeout = setTimeout(() => {
-					port.close();
-					reject();
-				}, 20);
+				}).catch(reject);
 			});
 		});
 
@@ -234,6 +233,7 @@
 
 	awaitHandshake()
 		.then(async () => {
+			await sendEncrypted({ type: 'LAMBDA_READY' });
 			activityLog.dbg(`Function execution started: requestId=${requestId}.`);
 
 			const runLambda = async () => {
@@ -250,13 +250,14 @@
 				result: { return: result }
 			});
 		})
-		.catch((err) => {
+		.catch(async (err) => {
 			activityLog.err(`Function execution failed: requestId=${requestId}.`, err?.message || err);
 			printToShell('warn', `Lambda failed: ${err?.message || err}`);
-			sendEncrypted({
+			await sendEncrypted({
 				type: 'LAMBDA_RESULT',
 				id: requestId,
 				result: { error: err?.message || String(err) }
 			});
+			port?.close();
 		});
 })();

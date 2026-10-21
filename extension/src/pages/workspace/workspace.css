@@ -416,6 +416,8 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
   margin: 12px 12px 8px;
 }
 .project-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   color: var(--panel-hover);
   font-size: 11px;
@@ -423,6 +425,16 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
   letter-spacing: .12em;
   text-transform: uppercase;
 }
+.project-header-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.security-project-link { border: 0; padding: 0; background: transparent; color: var(--text); text-decoration: underline; font: inherit; }
+.project-settings-button { width: 24px; height: 24px; color: var(--muted); }
+.project-settings-button .lucide-icon { width: 14px; height: 14px; }
+.caller-restrictions { border-top: 1px solid var(--line); padding-top: 16px; }
+.caller-restrictions > summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.caller-restrictions-description { font-size: 12px; color: var(--muted); margin: 8px 0 12px; }
+.caller-restrictions-body { display: grid; gap: 14px; padding-top: 12px; }
+.caller-restrictions-body textarea { min-height: 85px; resize: vertical; }
+.caller-restrictions-reset { border: 0; background: transparent; color: var(--green); padding: 0; font-size: 12px; justify-self: start; }
 
 .project-delete {
   width: 22px;
@@ -510,6 +522,7 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .access-switch:checked::after { transform: translateX(15px); background: #101010; }
 .form-pane .access-switch:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 .access-select-row select { max-width: 48%; border: 1px solid var(--line); border-radius: 8px; background: var(--active-line); color: var(--text); padding: 8px; font: inherit; }
+.access-select-row select:disabled { color: var(--muted); opacity: .55; cursor: not-allowed; }
 .url-allowlist-area.muted { opacity: .45; }
 .url-allowlist-area textarea:disabled { cursor: not-allowed; }
 .function-form { width: min(100%, 532px); }

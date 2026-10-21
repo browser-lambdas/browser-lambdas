@@ -1,6 +1,18 @@
 const app = document.getElementById('app');
 let cleanupBaahSync = null;
 
+const settingKeys = [
+  LOCAL_STORAGE_KEY_KEYBINDING,
+  LOCAL_STORAGE_KEY_STICKYSHELL,
+  LOCAL_STORAGE_KEY_SHELL_ALWAYS_ON,
+  LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS,
+  LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE,
+  LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS,
+  LOCAL_STORAGE_KEY_BAAH_REQUIRE_REVIEW,
+  LOCAL_STORAGE_KEY_BAAH_POLL_CHANGES,
+  LOCAL_STORAGE_KEY_WS_PORT,
+];
+
 const state = {
   keybinding: { meta: true, ctrl: false, key: 'k' },
   stickyShell: false,
@@ -8,7 +20,6 @@ const state = {
   allowMainWorldSecrets: false,
   allowMainWorldStorage: false,
   allowMainWorldFunctions: false,
-  allowMainWorldTriggers: false,
   baahRequireReview: true,
   baahPollChanges: true,
   wsPort: 4455,
@@ -47,74 +58,78 @@ function button(label, action, options = {}) {
 }
 
 function toggle(label, pressed, action, extraAttrs = '') {
-  return `<button class="toggle" data-state="${pressed ? 'on' : 'off'}" data-action="${action}" aria-pressed="${pressed}" ${extraAttrs}>${label}</button>`;
+  return `<button type="button" class="toggle" data-state="${pressed ? 'on' : 'off'}" data-action="${action}" aria-label="${escapeHtml(label)}" aria-pressed="${pressed}" ${extraAttrs}></button>`;
 }
 
 const mainWorldCategories = [
   { label: 'functions', field: 'allowMainWorldFunctions', save: setAllowMainWorldFunctions },
   { label: 'storage', field: 'allowMainWorldStorage', save: setAllowMainWorldStorage },
-  { label: 'triggers', field: 'allowMainWorldTriggers', save: setAllowMainWorldTriggers },
   { label: 'secrets', field: 'allowMainWorldSecrets', save: setAllowMainWorldSecrets }
 ];
 
 function renderSettings() {
   return `<div class="settings-scroll">
     <main class="settings-card">
-      <section class="settings-section settings-header">
+      <header class="settings-section settings-header">
         <h1 class="settings-page-title">${lucideIcon('settings')}<span>Settings</span></h1>
-        <p>Manage your shell settings here</p>
-      </section>
+        <p>Manage your shell, CLI connections, and security.</p>
+      </header>
 
-      <section class="settings-section">
-        <h2 class="section-title">Connection token</h2>
-        <p class="section-description">Copy this token when setting up a browser connection with baah init or baah set. Deleting it invalidates existing CLI connections.</p>
-        <div class="token-actions">
-          ${state.baahToken ? `
-            <label class="token-status"><input type="checkbox" checked disabled> Token created!</label>
-            ${state.baahTokenCreatedAt ? `<time datetime="${escapeHtml(new Date(state.baahTokenCreatedAt).toISOString())}">(${escapeHtml(new Date(state.baahTokenCreatedAt).toLocaleString())})</time>` : '<span>(creation date unavailable)</span>'}
-            ${button(state.copied ? 'Copied!' : 'Copy', 'copy-token', { icon: lucideIcon(state.copied ? 'check' : 'clipboard') })}
-            ${button('Delete', 'delete-token', { icon: lucideIcon('trash') })}
-          ` : `<span>No tokens yet..</span>${button('Create new', 'generate-token', { icon: lucideIcon('plus') })}`}
+      <section class="settings-section" aria-labelledby="shell-settings">
+        <h2 class="settings-group-title" id="shell-settings">Shell</h2>
+        <div class="settings-block settings-control-row">
+          <div class="settings-control-copy">
+            <h3 class="section-title"><label for="shell-keybinding">Key binding</label></h3>
+            <p class="section-description">Choose a shortcut to toggle the shell.</p>
+            <p class="hint">Press a key combination to set a shortcut.</p>
+          </div>
+          <input id="shell-keybinding" class="text-input keybinding ${state.capturingKeybinding ? 'capturing' : ''}" type="text" value="${escapeHtml(keybindingDisplayText())}" data-action="keybinding" readonly />
+        </div>
+        <div class="toggle-row"><div>Keep Output History</div>${toggle('Keep Output History', state.stickyShell, 'toggle-sticky')}</div>
+        <div class="toggle-row"><div>Always Show Shell</div>${toggle('Always Show Shell', state.alwaysOn, 'toggle-always-on')}</div>
+        <div class="settings-block settings-control-row">
+          <div class="settings-control-copy">
+            <h3 class="section-title">Clear shell history</h3>
+            <p class="section-description">Clear output and command history from all open tabs.</p>
+          </div>
+          ${button('Clear', 'clear-history', { icon: lucideIcon('trash') })}
         </div>
       </section>
 
-      <section class="settings-section">
-        <p class="section-title">WebSocket Port</p>
-        <p class="section-description">Port used for baah push.</p>
-        <input class="text-input numeric" type="text" inputmode="numeric" value="${escapeHtml(state.wsPort)}" data-action="ws-port" />
+      <section class="settings-section" aria-labelledby="baah-cli-settings">
+        <h2 class="settings-group-title" id="baah-cli-settings">Baah CLI</h2>
+        <div class="settings-block">
+          <h3 class="section-title">Token</h3>
+          <p class="section-description">Copy this token when setting up a browser connection with baah init or baah set. Deleting it invalidates existing CLI connections.</p>
+          <div class="token-actions">
+            ${state.baahToken ? `
+              <label class="token-status"><input type="checkbox" checked disabled> Token created!</label>
+              ${state.baahTokenCreatedAt ? `<time datetime="${escapeHtml(new Date(state.baahTokenCreatedAt).toISOString())}">(${escapeHtml(new Date(state.baahTokenCreatedAt).toLocaleString())})</time>` : '<span>(creation date unavailable)</span>'}
+              ${button(state.copied ? 'Copied!' : 'Copy', 'copy-token', { icon: lucideIcon(state.copied ? 'check' : 'clipboard') })}
+              ${button('Delete', 'delete-token', { icon: lucideIcon('trash') })}
+            ` : `<span>No tokens yet.</span>${button('Create new', 'generate-token', { icon: lucideIcon('plus') })}`}
+          </div>
+        </div>
+        <div class="settings-block">
+          <h3 class="section-title">Polling</h3>
+          <p class="section-description">Receive project updates pushed using baah push.</p>
+          <div class="toggle-row" id="baah-poll"><div>Poll for updates</div>${toggle('Poll for updates', state.baahPollChanges, 'toggle-baah-poll')}</div>
+          <div class="toggle-row"><label for="baah-port">Port</label><input id="baah-port" class="text-input numeric" type="text" inputmode="numeric" value="${escapeHtml(state.wsPort)}" data-action="ws-port" /></div>
+        </div>
+        <div class="settings-block">
+          <h3 class="section-title">Review</h3>
+          <p class="section-description">Review updates pushed with baah push before applying them. Turning this off lets any local process with your baah token replace functions, styles, and triggers without review.</p>
+          <div class="toggle-row" id="baah-review"><div>Require review</div>${toggle('Require review', state.baahRequireReview, 'toggle-baah-review')}</div>
+        </div>
       </section>
 
-      <section class="settings-section">
-        <p class="section-title">Baah Push Review</p>
-        <p class="section-description">Require manual review before applying pushed lambdas, styles, and triggers. Turning this off means any local process with your baah token can replace them without review.</p>
-        <div class="toggle-row"><span>Require Review</span>${toggle(state.baahRequireReview ? 'On' : 'Off', state.baahRequireReview, 'toggle-baah-review')}</div>
-        <div class="toggle-row"><span>Poll changes</span>${toggle(state.baahPollChanges ? 'On' : 'Off', state.baahPollChanges, 'toggle-baah-poll')}</div>
-      </section>
-
-      <section class="settings-section">
-        <p class="section-title">Main world execution</p>
-        <p class="section-description">Main-world code shares a JavaScript environment with the page and can expose storage and secrets to untrusted scripts. Each item must also allow the main world and the current page.</p>
-        ${mainWorldCategories.map(({ label, field }) => `<div class="toggle-row" id="main-world-${label}"><span>Allow main world execution of ${label}</span>${toggle(state[field] ? 'On' : 'Off', state[field], `toggle-main-world-${label}`, `data-testid="allow-main-world-${label}"`)}</div>`).join('')}
-      </section>
-
-      <section class="settings-section">
-        <p class="section-title">Keybinding</p>
-        <p class="section-description">Define a custom shortcut to toggle the shell. Try something like Cmd + K or Ctrl + Shift + T.</p>
-        <input class="text-input keybinding ${state.capturingKeybinding ? 'capturing' : ''}" type="text" value="${escapeHtml(keybindingDisplayText())}" data-action="keybinding" readonly />
-        <p class="hint">Press a key combination to set a shortcut</p>
-      </section>
-
-      <section class="settings-section">
-        <p class="section-title">Feature Toggles</p>
-        <p class="section-description">Toggle shell behavior options like keeping output history or forcing the shell to stay visible.</p>
-        <div class="toggle-row"><span>Keep Output History</span>${toggle(state.stickyShell ? 'On' : 'Off', state.stickyShell, 'toggle-sticky')}</div>
-        <div class="toggle-row"><span>Always Show Shell</span>${toggle(state.alwaysOn ? 'On' : 'Off', state.alwaysOn, 'toggle-always-on')}</div>
-      </section>
-
-      <section class="settings-section">
-        <p class="section-title">Shell History</p>
-        <p class="section-description">Clear history for the current tab's shell session.</p>
-        <div class="fit">${button('Clear', 'clear-history', { icon: lucideIcon('trash') })}</div>
+      <section class="settings-section" aria-labelledby="security-settings">
+        <h2 class="settings-group-title" id="security-settings">Security</h2>
+        <div class="settings-block">
+          <h3 class="section-title">Main world execution</h3>
+          <p class="section-description">Main-world code shares a JavaScript environment with the page and can expose storage and secrets to untrusted scripts. Each item must also allow the main world and the current page.</p>
+          ${mainWorldCategories.map(({ label, field }) => `<div class="toggle-row" id="main-world-${label}"><div>Allow main world execution of ${label}</div>${toggle(`Allow main world execution of ${label}`, state[field], `toggle-main-world-${label}`, `data-testid="allow-main-world-${label}"`)}</div>`).join('')}
+        </div>
       </section>
 
       ${state.notice ? `<p class="notice">${escapeHtml(state.notice)}</p>` : ''}
@@ -129,9 +144,7 @@ function render() {
 }
 
 function scrollToLinkedSetting() {
-  const category = mainWorldCategories.find(({ label }) => location.hash === `#main-world-${label}`);
-  if (!category) return;
-  document.getElementById(`main-world-${category.label}`)?.scrollIntoView({ block: 'center' });
+  document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'center' });
 }
 
 window.addEventListener('hashchange', scrollToLinkedSetting);
@@ -151,7 +164,6 @@ async function loadSettings() {
   state.allowMainWorldSecrets = await getAllowMainWorldSecrets();
   state.allowMainWorldStorage = await getAllowMainWorldStorage();
   state.allowMainWorldFunctions = await getAllowMainWorldFunctions();
-  state.allowMainWorldTriggers = await getAllowMainWorldTriggers();
   state.baahRequireReview = await getBaahRequireReview();
   state.baahPollChanges = await getBaahPollChanges();
   await loadBaahToken();
@@ -242,6 +254,7 @@ app.addEventListener('click', async (event) => {
   }
   if (action === 'clear-history') await clearShellHistory();
 
+  await loadSettings();
   render();
 });
 
@@ -266,6 +279,7 @@ app.addEventListener('change', async (event) => {
     if (value >= 1 && value <= 65535) {
       state.wsPort = value;
       await setWsPort(value);
+      await loadSettings();
       render();
       return;
     }
@@ -296,6 +310,7 @@ window.addEventListener('keydown', async (event) => {
   };
   state.capturingKeybinding = false;
   await setKeyBinding(state.keybinding);
+  await loadSettings();
   render();
 });
 
@@ -309,11 +324,8 @@ window.addEventListener('keydown', async (event) => {
 window.addEventListener('beforeunload', () => cleanupBaahSync?.());
 
 chrome.storage.onChanged.addListener(async (changes, area) => {
-  if (area === 'local' && (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS])) {
-    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS]) state.allowMainWorldTriggers = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_TRIGGERS].newValue === true;
-    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS]) state.allowMainWorldFunctions = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS].newValue === true;
-    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE]) state.allowMainWorldStorage = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE].newValue === true;
-    if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS]) state.allowMainWorldSecrets = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS].newValue === true;
+  if (area === 'local' && settingKeys.some((key) => Object.hasOwn(changes, key))) {
+    await loadSettings();
     render();
   }
 

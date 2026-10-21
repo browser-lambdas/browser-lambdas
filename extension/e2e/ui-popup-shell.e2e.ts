@@ -29,19 +29,17 @@ test('popup open shell injects UI into active tab', async ({
 
 	if (popup.isClosed()) {
 		// New optimistic flow: popup can close immediately when in-page menu opens.
-		const menuState = await page.evaluate(() => {
+		const menuActions = await page.evaluate(() => {
 			const host = document.getElementById('browser-lambdas-popup-menu-host') as
 				| (HTMLElement & { shadowRoot?: ShadowRoot })
 				| null;
 			const actions = Array.from(host?.shadowRoot?.querySelectorAll<HTMLElement>('[data-action]') || [])
 				.map((element) => element.dataset.action);
-			const button = host?.shadowRoot?.querySelector<HTMLElement>('[data-action="shell"]');
-			button?.click();
-			return { actions, shellClicked: Boolean(button) };
+			return actions;
 		});
-		expect(menuState.actions.indexOf('activity')).toBeGreaterThan(-1);
-		expect(menuState.actions.indexOf('activity')).toBeLessThan(menuState.actions.indexOf('settings'));
-		expect(menuState.shellClicked).toBe(true);
+		expect(menuActions.indexOf('activity')).toBeGreaterThan(-1);
+		expect(menuActions.indexOf('activity')).toBeLessThan(menuActions.indexOf('settings'));
+		await page.locator('#browser-lambdas-popup-menu-host').locator('[data-action="shell"]').click();
 	} else {
 		// Fallback flow: click the popup's open shell button.
 		const links = await popup.locator('a.row').allTextContents();
@@ -58,17 +56,14 @@ test('popup open shell injects UI into active tab', async ({
 	await expect(page.locator('#browser-lambdas-shell')).toBeVisible();
 	const shellInput = page.frameLocator('#browser-lambdas-shell').locator('#shell-input');
 	await expect(shellInput).toBeVisible();
+	await page.bringToFront();
 	await expect(shellInput).toBeFocused();
 
 	const secondPopup = await page.context().newPage();
 	await secondPopup.goto(`${base}/popup.html`);
 	await expect(page.locator('#browser-lambdas-popup-menu-host')).toBeAttached();
-	await page.evaluate(() => {
-		const host = document.getElementById('browser-lambdas-popup-menu-host') as
-			| (HTMLElement & { shadowRoot?: ShadowRoot })
-			| null;
-		host?.shadowRoot?.querySelector<HTMLElement>('[data-action="shell"]')?.click();
-	});
+	await page.bringToFront();
+	await page.locator('#browser-lambdas-popup-menu-host').locator('[data-action="shell"]').click();
 	await expect(page.locator('#browser-lambdas-shell')).toHaveCount(1);
 });
 
@@ -201,8 +196,10 @@ test('shell bounds are isolated per page and settings controls do not jump', asy
 	await page.goto(`chrome-extension://${extensionId}/settings.html`);
 	const scroll = page.locator('.settings-scroll');
 	await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+	const alwaysOn = page.getByText('Always Show Shell').locator('..').getByRole('button');
+	await alwaysOn.scrollIntoViewIfNeeded();
 	const before = await scroll.evaluate((element) => element.scrollTop);
-	await page.getByText('Always Show Shell').locator('..').getByRole('button').click();
+	await alwaysOn.click();
 	await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBe(before);
 });
 
