@@ -3,6 +3,7 @@ import { saveProjectSettings } from '../shared/projectPolicy.js';
 import { SCRIPT_STATUS_CACHE_KEY } from './constants.js';
 import { executeLambda } from './executeLambda.js';
 import { runTriggers } from './runTriggers.js';
+import { handlePopupMenuSession } from './popupMenuSessions.js';
 import { appendActivityLog, log } from './activityLog.js';
 // Track which documents already executed triggers to avoid duplicates per page load
 const triggeredDocs = new Set();
@@ -29,6 +30,8 @@ const setScriptStatusCache = async (cache) => {
     });
 };
 export function handleRuntimeMessage(message, sender, sendResponse) {
+    const menuSession = handlePopupMenuSession(message, sender, sendResponse);
+    if (menuSession !== undefined) return menuSession;
     if (message?.type === 'WORKSPACE_PROJECT_SETTINGS_UPDATE') {
         if (!isWorkspaceSender(sender)) {
             sendResponse({ success: false, error: 'Project settings can only be changed in the workspace.' });
@@ -76,12 +79,12 @@ export function handleRuntimeMessage(message, sender, sendResponse) {
                 sendResponse({ success: false, error: 'No active tab found.' });
                 return;
             }
-            chrome.tabs.sendMessage(tabId, { action: 'OPEN_POPUP_MENU' }, () => {
+            chrome.tabs.sendMessage(tabId, { action: 'OPEN_POPUP_MENU' }, (response) => {
                 if (chrome.runtime.lastError) {
                     sendResponse({ success: false, error: chrome.runtime.lastError.message });
                     return;
                 }
-                sendResponse({ success: true });
+                sendResponse(response || { success: false, error: 'The menu did not respond.' });
             });
         });
         return true;

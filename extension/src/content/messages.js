@@ -105,8 +105,8 @@ if (typeof window !== 'undefined') {
                 sendResponse({ success: true });
             }
             if (msg.action === 'OPEN_POPUP_MENU') {
-                togglePopupMenu();
-                sendResponse({ success: true });
+                togglePopupMenu().then(sendResponse).catch(() => sendResponse({ success: false, error: 'The menu could not open.' }));
+                return true;
             }
         });
         chrome.runtime.sendMessage({ type: 'GET_TAB_ID' }, (res) => {

@@ -48,6 +48,8 @@ Pending batches live in extension storage. `pendingUpdates.js` applies reviewed 
 
 ## UI and shared patterns
 
+The in-page popup uses an extension-origin iframe, like the shell. `popupMenuSessions.js` issues short-lived, single-use sessions bound to the content-script tab; only the popup frame can claim them. The content script transfers a private `MessageChannel` with a token delivered through extension messaging, never the DOM or a window message to the website. The frame checks its parent origin and token before enabling controls, and accepts only trusted clicks. Failed startup removes the frame and preserves the browser popup fallback.
+
 The workspace keeps view state in `workspace.js`. Pane layout, code editing, review rendering and HTML escaping have dedicated modules alongside it; look there before adding another implementation.
 
 Project settings save automatically through a trusted workspace message, with serialized saves and conflict checks in `shared/projectPolicy.js`. Failed saves preserve edits and offer Retry. Global safeguards are always ceilings: projects can disable allowed execution or polling and require additional review, but cannot relax global restrictions. Unset project values inherit, and item permissions remain binding.

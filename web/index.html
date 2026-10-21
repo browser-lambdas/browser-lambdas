@@ -25,6 +25,7 @@
 						<a href="#category-hello-world" data-category-link="quick-start">hello world</a>
 						<a href="#category-ctx" data-category-link="ctx">ctx</a>
 						<a href="#category-baah" data-category-link="baah">baah</a>
+						<a href="#category-security" data-category-link="security">Sec</a>
 						<a href="#category-llms" data-category-link="llms">llms.txt</a>
 					</div>
 					<hr class="docs-nav-divider" />
@@ -292,6 +293,31 @@ console.log(await res.json());</code></pre>
 							</section>
 
 							<section class="doc-section">
+								<h2 id="chain">Chain</h2>
+								<p>Return a value from one lambda and pass it to the next through command arguments.</p>
+								<pre><code data-language="shell">$ tree functions
+functions
+├── count-links.js
+├── show-count.js
+└── chain.js
+
+$ cat functions/count-links.js
+return document.querySelectorAll('a').length;
+
+$ cat functions/show-count.js
+const { count } = ctx.args.all();
+console.log(count);
+
+$ cat functions/chain.js
+const count = await ctx.run("count-links");
+if (count !== undefined) {
+  await ctx.run(`show-count --count ${count}`);
+}</code></pre>
+								<p>This also works with the tab <a href="#ctxtabsthisruncmd"><code>.run()</code></a> command.</p>
+								<p>Return JSON-compatible values. Anything else yields <code>undefined</code>.</p>
+							</section>
+
+							<section class="doc-section">
 								<h2 id="tabs">Tabs</h2>
 								<h3 id="ctxtabsnewurl"><code>ctx.tabs.new(url?)</code></h3>
 								<p>Opens a new tab with the specified URL.</p>
@@ -316,6 +342,59 @@ await tab.close();</code></pre>
 for (const tab of tabs) {
   console.log(tab.title);
 }</code></pre>
+							</section>
+						</div>
+
+						<div class="doc-group" data-category="security" id="category-security" hidden>
+							<section class="doc-section">
+								<h1 id="security">Security</h1>
+								<h2 id="security-approach">Approach</h2>
+								<p>Browser Lambdas was build to give developers great powers. And as we all know with greater powers - comes great security checks. Because it’s just not a bad idea to manage risks and exposure. You could screw yourself over by accident or bad actors could try and take advantage of you. The extension and cli tool both take the same approach: <em>safe by default and loosy goosy if you so choosy</em>. Almost. This article covers the layers of protection in both pieces of software and what you can turn on/off.</p>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="security-terminal">Terminal</h2>
+								<p>The main risk managed here is a malicious website:</p>
+								<ol type="A">
+									<li>opening the terminal</li>
+									<li>typing commands into it.</li>
+									<li>reading data from it</li>
+									<li>DOS’ing it</li>
+								</ol>
+								<p>The overall approach to mitigate this is isolating the terminal from the page it works on:</p>
+								<ol>
+									<li>
+										<p>The content script injects the terminal into pages when:</p>
+										<ul>
+											<li>the user opens it via the extension popup/menu,</li>
+											<li>the user presses the keyboard shortcut, or</li>
+											<li>Always on is enabled in Settings (off by default).</li>
+										</ul>
+										<p>The shortcut checks <code>event.isTrusted</code>, a browser-set flag that website-created keyboard events cannot set. This prevents websites from opening the terminal with synthetic keystrokes.</p>
+									</li>
+									<li>
+										<p>The injected terminal is embedded in an iframe. This is essentially an isolation layer prevents B and C.</p>
+										<p>Plus it reduces the surface for DOS attacks but it does not mitigate it fully</p>
+									</li>
+								</ol>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="security-function-injection">Function injection</h2>
+								<p>When a user runs a lambdas on a website a few things happens:</p>
+								<ol>
+									<li>Terminal communicates to popup script that user wants to run a lambda function on this site</li>
+									<li>Background worker builds a function (essentially a small runtime + the lambda function)</li>
+									<li>Injects it via browser APIs into either the user world or main world of the page</li>
+									<li>Results and data is send back into the terminal</li>
+								</ol>
+								<p>This opens a few risks on malicious websites:</p>
+								<ol>
+									<li>They try to trigger existing functions</li>
+									<li>They could try to intercept messages</li>
+									<li>They could try and manipulate valid functions</li>
+									<li>They could try to pretend to be valid runtimes</li>
+								</ol>
 							</section>
 						</div>
 

@@ -19,12 +19,12 @@ test('build resolves every page, manifest resource and module import without dup
             ...manifest.content_scripts.flatMap((entry) => entry.js),
             ...manifest.web_accessible_resources.flatMap((entry) => entry.resources)];
         for (const resource of resources) assert.ok(existsSync(join(output, resource)), resource);
-        for (const page of ['popup', 'settings', 'workspace', 'shell']) {
+        for (const page of ['popup', 'popup-menu', 'settings', 'workspace', 'shell']) {
             const html = readFileSync(join(output, `${page}.html`), 'utf8');
             for (const [, resource] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
                 assert.ok(existsSync(resolve(output, resource)), `${page}: ${resource}`);
             }
-            assert.equal(existsSync(join(output, `pages/${page}/${page}.html`)), false);
+            assert.equal(existsSync(join(output, `pages/${page === 'popup-menu' ? 'popup' : page}/${page}.html`)), false);
             assert.equal(existsSync(join(output, `${page}.js`)), false);
         }
         function checkImports(directory) {
