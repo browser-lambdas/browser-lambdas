@@ -209,6 +209,34 @@ test("loads trigger patterns in scalar, inline and block forms", (t) => {
   }
 });
 
+test("push aborts before sync when any trigger fails to load or parse", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baah-invalid-triggers-"));
+  const run = (...args) => spawnSync(process.execPath, [fileURLToPath(new URL("./baah.js", import.meta.url)), ...args], {
+    cwd: dir, env: { ...process.env, ...isolatedHome(dir) }, encoding: "utf8", timeout: 5000,
+  });
+  try {
+    assert.equal(run("set", "test", "--token", "test-private-token").status, 0);
+    fs.mkdirSync(path.join(dir, "triggers"));
+    const invalid = path.join(dir, "triggers/invalid.yaml");
+    for (const content of ["unsupported: value\n", "  invalid syntax\n", "name: [invalid]\n", "#".repeat(1024 * 1024 + 1)]) {
+      fs.writeFileSync(invalid, content);
+      for (const mixed of [false, true]) {
+        const valid = path.join(dir, "triggers/valid.yaml");
+        if (mixed) fs.writeFileSync(valid, "patterns: https://example.com/*\ncommands: hello\n");
+        const result = run("push", "test");
+        assert.equal(result.error, undefined);
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /Failed to parse trigger.*invalid\.yaml/);
+        assert.match(result.stderr, /Push aborted:.*no changes were sent/);
+        assert.ok(!`${result.stdout}${result.stderr}`.includes("test-private-token"));
+        if (mixed) fs.unlinkSync(valid);
+      }
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("loads commented trigger files in scalar, inline and block forms", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baah-commented-triggers-"));
   try {

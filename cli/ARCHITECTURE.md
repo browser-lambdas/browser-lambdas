@@ -38,7 +38,7 @@ The CLI discovers project files and reads lambda source without executing it. Tr
 
 The CLI waits for an encrypted acknowledgement matching the batch ID. `batch-received` can mean pending review; `batch-applied` means application completed. Rejection, authentication failure or an acknowledgement timeout reports failure. No discovered resources produces a message and returns without opening the server.
 
-Currently, individual trigger parse errors are logged and those triggers are omitted from the outgoing collection. Consider this behavior alongside manifest-driven deletion when reviewing changes to discovery or validation.
+Any trigger load or parse failure aborts the entire push before opening the sync server. Failed triggers cannot become omissions in a deletion manifest; valid pushes still synchronize intentional local removals.
 
 ## Packaging and tests
 
