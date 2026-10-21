@@ -9,6 +9,21 @@ issues = "{constants.repo}/issues"
 [bl.issue]
 new = "{constants.repo}/issues/new?title={title}&body={description}"
 
+[bl.publish-extension]
+hint = "Build the Chrome Web Store upload ZIP"
+args = [
+  { name = "browser", enum = ["chrome"] },
+]
+run = '''
+set -e
+case "$1" in
+  chrome)
+    npm ci --prefix extension
+    npm run package:chrome-store --prefix extension
+    ;;
+esac
+'''
+
 [bl.bump]
 hint = "Bump a version, update its changelog, and commit the release"
 args = [
