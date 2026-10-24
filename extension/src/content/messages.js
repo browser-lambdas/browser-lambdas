@@ -7,6 +7,9 @@ const requestToChannel = new Map();
 // Send a message to the background script. This will be redefined if the
 // `chrome` runtime is available. Typing the parameter avoids `any` errors when
 // used elsewhere.
+let postToBackground = () => {
+    throw new Error('Chrome runtime not available.');
+};
 let sendToBackground = async () => {
     throw new Error('Chrome runtime not available.');
 };
@@ -29,9 +32,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
             if (channelId) {
                 const entry = channelToPort.get(channelId);
                 if (entry) {
-                    const { port, sessionKey } = entry;
-                    const encrypted = await encrypt({ type: msg.type, id: msg.id, value: msg.value, error: msg.error }, sessionKey);
-                    port.postMessage(encrypted);
+                    entry.channel.send({ type: msg.type, id: msg.id, value: msg.value, error: msg.error });
                 }
                 else {
                     log.err(`Unable to relay response: lambda channel is unavailable (channelId=${channelId}, requestId=${msg.id}).`);
@@ -48,6 +49,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
             pending.delete(msg.id);
         }
     });
+    postToBackground = (msg) => bgPort.postMessage(msg);
     sendToBackground = (msg) => new Promise((resolve) => {
         msg.id = msg.id || crypto.randomUUID();
         pending.set(msg.id, resolve);
@@ -55,36 +57,34 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
         bgPort.postMessage(msg);
     });
 }
-const handleFunctionCall = async (msg, sessionKey, channelId) => {
+const handleFunctionCall = (msg, channelId) => {
     log.dbg(`Forwarding nested function request: requestId=${msg.id}, targetTabId=${msg.tabId ?? tabId ?? 'none'}.`);
     try {
         requestToChannel.set(msg.id, channelId);
-        await sendToBackground({
-            type: 'EXECUTE_LAMBDA',
-            tabId: msg.tabId ?? tabId,
-            requestId: msg.id,
-            userInput: msg.userInput,
+        postToBackground({
+            type: 'EXECUTE_LAMBDA', tabId: msg.tabId ?? tabId,
+            requestId: msg.id, userInput: msg.userInput,
             invocationToken: channelToPort.get(channelId)?.invocationToken
         });
-    }
-    catch (e) {
-        log.err(`Failed to forward nested function request: requestId=${msg.id}.`, e);
-        const entry = channelToPort.get(channelId);
-        const resp = await encrypt({ type: 'FUNCTION_CALL_RESPONSE', id: msg.id, value: undefined, error: e.message }, sessionKey);
-        entry.port.postMessage(resp);
+    } catch (error) {
+        requestToChannel.delete(msg.id);
+        channelToPort.get(channelId)?.channel.send({ type: 'FUNCTION_CALL_RESPONSE', id: msg.id, error: error.message });
     }
 };
 if (typeof window !== 'undefined') {
     const handshakeMap = new Map();
     const failHandshake = (hs) => {
+        if (hs.failed || hs.completed) return;
+        hs.failed = true;
         clearTimeout(hs.timeout);
         handshakeMap.delete(hs.aToken);
-        channelToPort.get(hs.requestId)?.port.close();
+        channelToPort.get(hs.requestId)?.channel.close();
         channelToPort.delete(hs.requestId);
-        const error = 'The function could not establish its runtime connection.';
+        const error = 'The function runtime connection failed.';
         log.err(`Function handshake failed: requestId=${hs.requestId}.`);
-        sendToBackground({ type: 'LAMBDA_RESULT', id: hs.requestId, result: { error }, invocationToken: hs.invocationToken })
-            .catch((err) => log.err('Unable to report the failed function handshake.', err));
+        try {
+            postToBackground({ type: 'LAMBDA_RESULT', id: hs.requestId, result: { error }, invocationToken: hs.invocationToken });
+        } catch (err) { log.err('Unable to report the failed function handshake.', err); }
     };
     if (typeof chrome !== 'undefined') {
         chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -123,70 +123,54 @@ if (typeof window !== 'undefined') {
         const channelId = hs.requestId;
         const sessionKey = hs.sessionKey;
         const handshakeId = hs.handshakeId;
-        const handshakeLambdaToken = hs.handshakeLambdaToken;
-        const handshakeContentToken = hs.handshakeContentToken;
         const chan = new MessageChannel();
-        const port = chan.port1;
-        channelToPort.set(channelId, { port, sessionKey, invocationToken: hs.invocationToken });
+        const channel = createSecureChannel({
+            port: chan.port1, key: sessionKey, sessionId: channelId, purpose: 'lambda', role: 'host',
+            onError: () => failHandshake(hs),
+            onMessage: async (msg) => {
+                // Only the trusted background handshake supplies caller identity.
+                msg.invocationToken = hs.invocationToken;
+                msg.executionWorld = hs.executionWorld;
+                switch (msg.type) {
+                    case 'LAMBDA_READY':
+                        clearTimeout(hs.timeout);
+                        break;
+                    case 'SHELL_OUTPUT':
+                        appendShellOutput(msg.level, Array.isArray(msg.values) ? msg.values : []);
+                        break;
+                    case 'ACTIVITY_LOG':
+                        (log[msg.level === 'error' ? 'err' : msg.level === 'debug' ? 'dbg' : 'info'] || log.info)(msg.message);
+                        break;
+                    case 'FUNCTION_CALL_REQUEST':
+                        handleFunctionCall(msg, channelId);
+                        break;
+                    case 'TAB_OPERATION_REQUEST':
+                        log.dbg(`Forwarding tab operation: operation=${msg.operation}, requestId=${msg.id}.`);
+                        requestToChannel.set(msg.id, channelId);
+                        postToBackground(msg);
+                        break;
+                    case 'LAMBDA_RESULT':
+                        msg.id = hs.requestId;
+                        postToBackground(msg);
+                        hs.completed = true;
+                        clearTimeout(hs.timeout);
+                        channelToPort.delete(channelId);
+                        channel.close();
+                        break;
+                    case 'GET_SECRET_REQUEST':
+                    case 'GET_STORAGE_REQUEST':
+                    case 'SET_STORAGE_REQUEST': {
+                        const r = await sendToBackground(msg);
+                        channel.send(r);
+                        break;
+                    }
+                }
+            }
+        });
+        channel.ready.then(() => log.dbg(`Secure function channel established: requestId=${channelId}.`)).catch(() => {});
+        channelToPort.set(channelId, { channel, invocationToken: hs.invocationToken });
         log.dbg(`Opening secure function channel: requestId=${channelId}.`);
         window.postMessage({ type: 'CONTENT_SCRIPT_HANDSHAKE', handshakeId }, '*', [chan.port2]);
-        let done = false;
-        port.onmessage = async ({ data }) => {
-            let msg;
-            try {
-                msg = await decrypt(data, sessionKey);
-            }
-            catch (err) {
-                log.err(`Secure function message could not be decrypted: requestId=${channelId}.`, err);
-                failHandshake(hs);
-                return;
-            }
-            if (!done) {
-                if (msg.type === 'HANDSHAKE_LAMBDA' && msg.token === handshakeLambdaToken) {
-                    done = true;
-                    const resp = await encrypt({ type: 'HANDSHAKE_CONTENT', token: handshakeContentToken }, sessionKey);
-                    log.dbg(`Secure function channel established: requestId=${channelId}.`);
-                    port.postMessage(resp);
-                    return;
-                }
-                return;
-            }
-            // Only the trusted background handshake supplies caller identity.
-            msg.invocationToken = hs.invocationToken;
-            msg.executionWorld = hs.executionWorld;
-            switch (msg.type) {
-                case 'LAMBDA_READY':
-                    clearTimeout(hs.timeout);
-                    break;
-                case 'SHELL_OUTPUT':
-                    appendShellOutput(msg.level, Array.isArray(msg.values) ? msg.values : []);
-                    break;
-                case 'ACTIVITY_LOG':
-                    (log[msg.level === 'error' ? 'err' : msg.level === 'debug' ? 'dbg' : 'info'] || log.info)(msg.message);
-                    break;
-                case 'FUNCTION_CALL_REQUEST':
-                    await handleFunctionCall(msg, sessionKey, channelId);
-                    break;
-                case 'TAB_OPERATION_REQUEST':
-                    log.dbg(`Forwarding tab operation: operation=${msg.operation}, requestId=${msg.id}.`);
-                    requestToChannel.set(msg.id, channelId);
-                    sendToBackground(msg);
-                    break;
-                case 'LAMBDA_RESULT':
-                    msg.id = hs.requestId;
-                    await sendToBackground(msg);
-                    channelToPort.delete(channelId);
-                    break;
-                case 'GET_SECRET_REQUEST':
-                case 'GET_STORAGE_REQUEST':
-                case 'SET_STORAGE_REQUEST': {
-                    const r = await sendToBackground(msg);
-                    const e = await encrypt(r, sessionKey);
-                    port.postMessage(e);
-                    break;
-                }
-            }
-        };
     });
 }
 const executeCommand = async (userInput) => {

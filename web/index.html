@@ -349,53 +349,154 @@ for (const tab of tabs) {
 							<section class="doc-section">
 								<h1 id="security">Security</h1>
 								<h2 id="security-approach">Approach</h2>
-								<p>Browser Lambdas was build to give developers great powers. And as we all know with greater powers - comes great security checks. Because it’s just not a bad idea to manage risks and exposure. You could screw yourself over by accident or bad actors could try and take advantage of you. The extension and cli tool both take the same approach: <em>safe by default and loosy goosy if you so choosy</em>. Almost. This article covers the layers of protection in both pieces of software and what you can turn on/off.</p>
+								<p>Browser Lambdas was build to give developers great powers. And as we all know with greater powers - comes great security checks. Because it’s just not a bad idea to manage risks and exposure. You could screw yourself over by accident or bad actors could try and take advantage of you. The extension and cli tool both take the same approach: <em>safe by default and loosy goosy if you so choosy</em>. This article covers the layers of protection in both pieces of software and what you can turn on/off.</p>
 							</section>
 
 							<section class="doc-section">
-								<h2 id="security-terminal">Terminal</h2>
-								<p>The main risk managed here is a malicious website:</p>
-								<ol type="A">
-									<li>opening the terminal</li>
-									<li>typing commands into it.</li>
-									<li>reading data from it</li>
-									<li>DOS’ing it</li>
-								</ol>
-								<p>The overall approach to mitigate this is isolating the terminal from the page it works on:</p>
+								<h2 id="security-bad-pages">Bad Pages</h2>
+								<p>One important risk to address is the issue of malicious or "Bad" pages. These are pages that either target users running browser lambdas on purpose or because they have been compromised. Bad pages could try to:</p>
 								<ol>
-									<li>
-										<p>The content script injects the terminal into pages when:</p>
-										<ul>
-											<li>the user opens it via the extension popup/menu,</li>
-											<li>the user presses the keyboard shortcut, or</li>
-											<li>Always on is enabled in Settings (off by default).</li>
-										</ul>
-										<p>The shortcut checks <code>event.isTrusted</code>, a browser-set flag that website-created keyboard events cannot set. This prevents websites from opening the terminal with synthetic keystrokes.</p>
-									</li>
-									<li>
-										<p>The injected terminal is embedded in an iframe. This is essentially an isolation layer prevents B and C.</p>
-										<p>Plus it reduces the surface for DOS attacks but it does not mitigate it fully</p>
-									</li>
+									<li>Open controls or run functions without user input</li>
+									<li>Inject commands or manipulate execution</li>
+									<li>Read private data or intercept messages</li>
+									<li>Impersonate a valid runtime</li>
+									<li>Disrupt the terminal or other controls</li>
 								</ol>
+								<p>The overall strategy to mitigate this risk is using built-in browser security barriers to isolate important surfaces as much as possible plus using encryption any time data goes from one context to the next. This section describes how isolation is implemented on each surface: Pop up, Menu, Terminal, Workspace and Functions injected into the page.</p>
+
+								<h3 id="security-menu">Menu</h3>
+								<p>The menu opens inside the current website and provides controls for opening the terminal, workspace and settings.</p>
+								<p>A bad page could try to:</p>
+								<ol>
+									<li>Click menu buttons (open the terminal, activity logs or settings)</li>
+									<li>Read or modify the menu's contents</li>
+								</ol>
+								<p>To prevent this the in-page menu lives in an extension-origin iframe, preventing website scripts from reading or modifying its controls. Buttons also require trusted clicks.</p>
+
+								<h3 id="security-popup">Popup</h3>
+								<p>If the in-page menu cannot start, the browser popup keeps its own fallback controls. A bad page could try to:</p>
+								<ol>
+									<li>Read the browser popup</li>
+									<li>Activate its controls (open the terminal, workspace or settings).</li>
+								</ol>
+								<p>The popup lives outside the website, on the extension's own origin, so website scripts cannot access it.</p>
+
+								<h3 id="security-terminal">Terminal</h3>
+								<p>The terminal is the command interface for running lambda functions on the current website and viewing their output. A bad page could try to:</p>
+								<ol>
+									<li>Open the terminal</li>
+									<li>Type commands into it</li>
+									<li>Read its output</li>
+									<li>Make it unusable</li>
+								</ol>
+								<p>Like the other elements embedded in the page the terminal also lives in an extension-origin iframe, blocking direct access to its input and output. The shortcut-key  to open the terminal only accepts keyboard events with <code>event.isTrusted</code>. This prevents website scripts from forging synthetic keystrokes to open the terminal. Likewise submitting commands also requires trusted keyboard events.</p>
+
+								<h3 id="security-function-injection">Function Injection</h3>
+								<p>Function injection is when lambda functions and its runtime is injected into the website so it can interact with the page. A bad page could try to:</p>
+								<ol>
+									<li>Trigger existing functions</li>
+									<li>Intercept messages between the function and its extension backend</li>
+									<li>Manipulate execution</li>
+									<li>Pretend to be a valid runtime</li>
+								</ol>
+								<p>Functions use the user-script world by default, separating their JavaScript globals from the website. When a user runs a lambda:</p>
+								<ol>
+									<li>The terminal sends the command through the content script to the background worker</li>
+									<li>The worker checks permissions and builds the lambda with its runtime</li>
+									<li>Browser APIs inject it into the user-script world or main world</li>
+									<li>Results and output return through the content-script bridge to the terminal</li>
+								</ol>
+								<p>Main-world execution is a bit of a different story. It shares the website's JavaScript environment and is thus exposed to additional risks. More about that in the next section</p>
 							</section>
 
 							<section class="doc-section">
-								<h2 id="security-function-injection">Function injection</h2>
-								<p>When a user runs a lambdas on a website a few things happens:</p>
+								<h2 id="security-execution-worlds">Execution Worlds</h2>
+								<p>An <a href="https://developer.chrome.com/docs/extensions/reference/api/userScripts#work_in_isolated_worlds" target="_blank" rel="noopener noreferrer">execution world</a> determines which JavaScript environment a lambda runs in.</p>
+
+								<h3 id="security-user-world">User world</h3>
+								<p>User world is the default. Its JavaScript globals are separate from the website's, allowing lambdas to:</p>
+								<ul>
+									<li>Read and change the page's DOM</li>
+									<li>Click elements, fill forms and listen for events</li>
+									<li>Use <code>ctx</code> APIs, subject to their permissions</li>
+								</ul>
+								<p>Page-defined variables and functions are not directly accessible. The DOM remains shared, so page content and events are still untrusted.</p>
+
+								<h3 id="security-main-world">Main world</h3>
+								<p>Main world shares the website's JavaScript environment. Lambdas can:</p>
+								<ul>
+									<li>Read and change the DOM, just like in user world</li>
+									<li>Access page-defined globals and call the website's JavaScript functions</li>
+									<li>Use <code>ctx</code> APIs, subject to main-world permissions</li>
+								</ul>
+								<p>This also gives a bad page more ways to interfere:</p>
 								<ol>
-									<li>Terminal communicates to popup script that user wants to run a lambda function on this site</li>
-									<li>Background worker builds a function (essentially a small runtime + the lambda function)</li>
-									<li>Injects it via browser APIs into either the user world or main world of the page</li>
-									<li>Results and data is send back into the terminal</li>
+									<li>Replace APIs like <code>fetch</code> to read arguments, including secrets a lambda passes to them</li>
+									<li>Change page functions to alter a lambda's behavior or return misleading results</li>
+									<li>Intercept callbacks or shared objects to inspect data exposed by the lambda</li>
 								</ol>
-								<p>This opens a few risks on malicious websites:</p>
-								<ol>
-									<li>They try to trigger existing functions</li>
-									<li>They could try to intercept messages</li>
-									<li>They could try and manipulate valid functions</li>
-									<li>They could try to pretend to be valid runtimes</li>
-								</ol>
+								<p>Encrypted communication cannot protect data inside a compromised JavaScript environment.</p>
+
+								<h3 id="security-world-settings">Global and project settings</h3>
+								<p>Main-world access to functions, storage and secrets is off by default, with separate global switches for each. Projects can further restrict function execution in either world and choose a default world.</p>
+								<p>A function's explicit world overrides the project default. If neither sets a default, user world is used. Item permissions and URL restrictions still apply: selecting a world does not grant access, and blocked execution does not fall back to another world.</p>
 							</section>
+
+							<section class="doc-section">
+								<h2 id="security-communication">Securing communication paths</h2>
+								<p>The menu, terminal and injected runtime each communicate with the content script in order for multiple things to happen:</p>
+								<ol>
+									<li>Opening the terminal / menu</li>
+									<li>Typing function calls</li>
+									<li>Sending control messages and results from the lambda function to the background worker (kv, secrets, tabs etc)</li>
+								</ol>
+								<p>This communication needs to be protected such that messages that are responsible for manaing these flows cannot be intercepted, spoofed or forged.</p>
+								<p>The strategy here is to avoid any broadcasting API  (like postMessage) and encrypt all messages. To allow the different modules to communicate directly and privately with each other they all use the  MessageChannel API. These channels have two ports that pass messages that can only be read/written by the sender/receiver.</p>
+								<p>To authenticate each ends of a connection they each gets fresh credentials from the background worker, and both endpoints exchange encrypted proofs before accepting application messages.</p>
+								<p>All three use the same protocol: AES-GCM encrypts messages and detects changes, with separate keys for each direction. Messages are bound to their session and purpose; sequence checks reject replay and reordering.</p>
+								<p>The menu and terminal iframes receive their credentials through extension messaging. The content script transfers a port directly to the extension frame, which checks its parent and private token before connecting.</p>
+								<p>Function injection needs a different setup because the runtime starts inside the page:</p>
+								<ol>
+									<li>The background worker injects fresh credentials into the runtime and separately sends them to the content script through extension messaging.</li>
+									<li>The two endpoints find each other through window.postMessage identifiers and transfer a port. The website can observe or interrupt this setup, but the encryption key is never included in those window messages.</li>
+									<li>The shared encrypted handshake proves both endpoints have the key. Only then can runtime requests, output and results pass through the channel.</li>
+								</ol>
+								<p>Startup has a deadline. Failed authentication, invalid ciphertext or sequence violations stop application traffic and close the channel, with an encrypted failure notification to the peer when possible. There is no plaintext fallback.</p>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="security-baah-cli">baah CLI</h2>
+								<p>The baah CLI syncs local functions, triggers and styles to the extension. Authentication protects the connection; reviews protect against unwanted changes arriving through it.</p>
+
+								<h3 id="security-baah-authentication">Authentication</h3>
+								<p>A connection token pairs the extension with a named CLI connection. A bad actor could try to:</p>
+								<ol>
+									<li>Impersonate the extension (receive project source from the CLI)</li>
+									<li>Impersonate the CLI (send unwanted updates to the extension)</li>
+								</ol>
+								<p>Both sides prove they have the token through an HMAC challenge/response with fresh random nonces. The token itself is not sent over the connection. Failed authentication closes the connection before project data is sent.</p>
+
+								<h3 id="security-baah-push">Push</h3>
+								<p><code>baah push</code> starts a WebSocket server on <code>127.0.0.1</code>, reachable only from the same machine. The extension connects while the workspace is open.</p>
+								<p>A bad actor could try to:</p>
+								<ol>
+									<li>Read project source in transit</li>
+									<li>Modify updates or forge a successful acknowledgement</li>
+									<li>Replay old messages or change their order</li>
+								</ol>
+								<p>After authentication, separate session keys encrypt both directions with AES-GCM. Sequence checks reject replay and reordering; invalid messages close the connection.</p>
+								<p>The extension checks the completed batch before staging or applying it. The CLI requires an encrypted acknowledgement for that batch; rejection or a missing acknowledgement reports failure.</p>
+
+								<h3 id="security-baah-reviews">Reviews</h3>
+								<p>Authentication does not prove that incoming code is safe. A compromised local project or someone with the connection token could try to:</p>
+								<ol>
+									<li>Replace functions or triggers with unwanted behavior</li>
+									<li>Delete resources through a sync update</li>
+								</ol>
+								<p>Review is required by default. Changes wait in the workspace for approval or rejection, and functions with pending changes cannot run. A successful push can therefore mean received and waiting for review.</p>
+								<p>Disabling review allows direct application unless the project still requires it. Projects cannot relax a global review requirement; project locks reject synced changes, and updates preserve existing local permissions.</p>
+							</section>
+
 						</div>
 
 						<div class="doc-group" data-category="baah" id="category-baah">

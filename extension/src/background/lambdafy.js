@@ -11,8 +11,6 @@ export const lambdafy = (func, rawInput, context) => {
         .replace('__Q_TOKEN__', JSON.stringify(context.qToken))
         .replace('__A_TOKEN__', JSON.stringify(context.aToken))
         .replace('__HANDSHAKE_ID__', JSON.stringify(context.handshakeId))
-        .replace('__HANDSHAKE_LAMBDA_TOKEN__', JSON.stringify(context.handshakeLambdaToken))
-        .replace('__HANDSHAKE_CONTENT_TOKEN__', JSON.stringify(context.handshakeContentToken))
         .replace('__SESSION_KEY__', JSON.stringify(context.sessionKey))
         .replace('__REQUEST_ID__', JSON.stringify(context.requestId ?? null))
         .replace('__NESTED_DEPTH__', JSON.stringify(context.nestedDepth ?? 0));

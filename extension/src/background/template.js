@@ -2,53 +2,21 @@
 	const qToken = __Q_TOKEN__;
 	const aToken = __A_TOKEN__;
 	const handshakeId = __HANDSHAKE_ID__;
-	const handshakeLambdaToken = __HANDSHAKE_LAMBDA_TOKEN__;
-	const handshakeContentToken = __HANDSHAKE_CONTENT_TOKEN__;
 	const sessionKey = __SESSION_KEY__;
 	const requestId = __REQUEST_ID__;
 	const nestedDepth = __NESTED_DEPTH__;
 	const argsRaw = PLACEHOLDER_ARGS;
 
-	const decodeBase64 = (str) => Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
-	const encodeBase64 = (buf) => btoa(String.fromCharCode(...buf));
-
-	const decrypt = async (encrypted, key) => {
-		const rawKey = decodeBase64(key);
-		const cryptoKey = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['decrypt']);
-		const iv = decodeBase64(encrypted.iv);
-		const ct = decodeBase64(encrypted.ct);
-		const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ct);
-		return JSON.parse(new TextDecoder().decode(decrypted));
-	};
-
-	const encrypt = async (payload, key) => {
-		const rawKey = decodeBase64(key);
-		const cryptoKey = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['encrypt']);
-		const iv = crypto.getRandomValues(new Uint8Array(12));
-		const encoded = new TextEncoder().encode(JSON.stringify(payload));
-		const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, encoded);
-		return {
-			iv: encodeBase64(iv),
-			ct: encodeBase64(new Uint8Array(ct))
-		};
-	};
+	__SECURE_CHANNEL_SOURCE__;
 
 	const printToShell = (type, ...msgs) => {
 		sendEncrypted({ type: 'SHELL_OUTPUT', level: type, values: msgs.map(String) });
 	};
 
 	let port = null;
-	let handshakeComplete = false;
+	let secureChannel = null;
 	const requestResolvers = {};
-	let sendQueue = Promise.resolve();
-
-	const sendEncrypted = (payload) => {
-		sendQueue = sendQueue.then(async () => {
-			const msg = await encrypt(payload, sessionKey);
-			port.postMessage(msg);
-		});
-		return sendQueue;
-	};
+	const sendEncrypted = (payload) => secureChannel?.send(payload) || Promise.resolve();
 
 	const activityLog = Object.freeze({
 		err: (...values) => sendEncrypted({ type: 'ACTIVITY_LOG', level: 'error', message: values.map(String).join(' ') }),
@@ -123,6 +91,7 @@
 				new Promise(async (resolve) => {
 					const id = crypto.randomUUID();
 					requestResolvers[id] = (tab) => {
+						if (!tab) { resolve(undefined); return; }
 						const requestedUrl = typeof arg === 'string' ? arg : arg.url;
 						resolve(tabWrapper(tab.id, tab.url ?? requestedUrl, tab.title));
 					};
@@ -168,7 +137,6 @@
 
 	const awaitHandshake = () =>
 		new Promise((resolve, reject) => {
-			let timeout;
 			window.addEventListener('message', function initListener(event) {
 				if (
 					event.source !== window ||
@@ -184,40 +152,21 @@
 					return reject();
 				}
 
-				port.onmessage = async (event) => {
-					let msg;
-					try {
-						msg = await decrypt(event.data, sessionKey);
-					} catch (err) {
-						clearTimeout(timeout);
-						reject(err);
-						return;
-					}
-
-					if (!handshakeComplete) {
-						if (msg.type !== 'HANDSHAKE_CONTENT' || msg.token !== handshakeContentToken) {
-							clearTimeout(timeout);
-								reject(new Error('Function runtime handshake was not authenticated.'));
-							return;
+				secureChannel = createSecureChannel({
+					port, key: sessionKey, sessionId: requestId, purpose: 'lambda', role: 'client',
+					onMessage: handleSecureMessage,
+					onError: (error) => {
+						for (const [id, resolveRequest] of Object.entries(requestResolvers)) {
+							delete requestResolvers[id];
+							try { resolveRequest(undefined); } catch {}
 						}
-						handshakeComplete = true;
-						clearTimeout(timeout);
-						activityLog.dbg(`Secure runtime channel established: requestId=${requestId}.`);
-						resolve();
-						return;
+						reject(error);
 					}
-
-					handleSecureMessage(msg);
-				};
-
-				timeout = setTimeout(() => {
-					// Keep the channel open to report the failure before closing it.
-					reject(new Error('Function runtime handshake timed out.'));
-				}, 1000);
-				sendEncrypted({
-					type: 'HANDSHAKE_LAMBDA',
-					token: handshakeLambdaToken
-				}).catch(reject);
+				});
+				secureChannel.ready.then(() => {
+					activityLog.dbg(`Secure runtime channel established: requestId=${requestId}.`);
+					resolve();
+				}, reject);
 			});
 		});
 
@@ -258,6 +207,7 @@
 				id: requestId,
 				result: { error: err?.message || String(err) }
 			});
+			secureChannel?.close();
 			port?.close();
 		});
 })();

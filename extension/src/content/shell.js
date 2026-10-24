@@ -26,7 +26,7 @@ const currentFrameBounds = (frame) => {
 };
 const shellPositionScope = location.href.split('#')[0];
 const persistFrameBounds = (frame) => setShellPosition(currentFrameBounds(frame), shellPositionScope);
-const sendShellMessage = (message) => shellFrameSession?.ready && shellFrameSession.port.postMessage(message);
+const sendShellMessage = (message) => shellFrameSession?.ready && shellFrameSession.channel.send(message);
 const appendShellOutput = (level, values) => sendShellMessage({ type: 'SHELL_OUTPUT', level, values: values.map(String) });
 
 const placeShellFrame = async (frame, placement) => {
@@ -72,37 +72,73 @@ const handleShellFrameMessage = async (session, message) => {
 };
 const showShell = async (tabId, useHistory = false) => {
     if (shellFrameSession) { sendShellMessage({ type: 'FOCUS' }); return; }
-    const frame = document.createElement('iframe');
-    const nonce = crypto.randomUUID();
-    await chrome.runtime.sendMessage({ type: 'REGISTER_SHELL_TOKEN', token: nonce });
-    frame.id = SHELL_ID;
-    frame.title = 'Browser Lambdas shell';
-    frame.dataset.testid = 'shell';
-    Object.assign(frame.style, { position: 'fixed', zIndex: '2147483647', border: '0', borderRadius: '24px', background: '#160e16', colorScheme: 'dark', overflow: 'hidden' });
-    setFrameBounds(frame, frameBounds(await getShellPosition(shellPositionScope)));
-    const url = new URL(chrome.runtime.getURL(SHELL_PAGE));
-    url.hash = new URLSearchParams({ parentOrigin: location.origin }).toString();
-    frame.src = url.href;
-    const channel = new MessageChannel();
-    const session = { frame, port: channel.port1, nonce, ready: false, interaction: null };
+    const session = { ready: false, interaction: null };
     shellFrameSession = session;
-    channel.port1.onmessage = ({ data }) => shellFrameSession === session && void handleShellFrameMessage(session, data);
-    channel.port1.start();
-    const extensionOrigin = new URL(chrome.runtime.getURL('/')).origin;
-    const ready = (event) => {
-        if (event.source !== frame.contentWindow || event.origin !== extensionOrigin || event.data?.type !== 'SHELL_READY' || event.data.nonce !== nonce) return;
-        window.removeEventListener('message', ready);
-        frame.contentWindow.postMessage({ type: 'SHELL_CONNECT', nonce, tabId, useHistory }, extensionOrigin, [channel.port2]);
-        session.ready = true;
-    };
-    session.readyListener = ready;
-    window.addEventListener('message', ready);
-    document.body.appendChild(frame);
+    try {
+        const registration = await chrome.runtime.sendMessage({ type: 'REGISTER_UI_SESSION', surface: 'shell' });
+        session.id = registration?.id;
+        if (shellFrameSession !== session) {
+            if (session.id) await chrome.runtime.sendMessage({ type: 'CANCEL_UI_SESSION', surface: 'shell', id: session.id });
+            return;
+        }
+        if (!registration?.token || !registration.sessionKey) throw new Error('The shell session could not be created.');
+        const frame = document.createElement('iframe');
+        session.frame = frame;
+        frame.id = SHELL_ID;
+        frame.title = 'Browser Lambdas shell';
+        frame.dataset.testid = 'shell';
+        Object.assign(frame.style, { position: 'fixed', zIndex: '2147483647', border: '0', borderRadius: '24px', background: '#160e16', colorScheme: 'dark', overflow: 'hidden' });
+        const bounds = await getShellPosition(shellPositionScope);
+        if (shellFrameSession !== session) return;
+        setFrameBounds(frame, frameBounds(bounds));
+        const url = new URL(chrome.runtime.getURL(SHELL_PAGE));
+        url.hash = registration.id;
+        frame.src = url.href;
+        frame.addEventListener('load', () => {
+            if (shellFrameSession !== session || session.port) return;
+            const channel = new MessageChannel();
+            session.port = channel.port1;
+            session.channel = createSecureChannel({
+                port: channel.port1, key: registration.sessionKey, sessionId: registration.id,
+                purpose: 'shell', role: 'host', timeoutMs: 2000,
+                onMessage: (data) => {
+                    if (shellFrameSession !== session) return;
+                    if (!session.ready) {
+                        if (data?.type !== 'SHELL_READY') throw new Error('The shell did not become ready.');
+                        session.ready = true;
+                        clearTimeout(session.timeout);
+                        return;
+                    }
+                    return handleShellFrameMessage(session, data);
+                },
+                onError: () => {
+                    if (shellFrameSession !== session) return;
+                    log.err('The encrypted shell connection failed. Reopen the terminal to try again.');
+                    removeShell();
+                }
+            });
+            frame.contentWindow.postMessage({ type: 'SHELL_CONNECT', token: registration.token }, url.origin, [channel.port2]);
+            session.channel.ready.then(() => session.channel.send({ type: 'INIT', tabId, useHistory })).catch(() => {});
+        }, { once: true });
+        session.timeout = setTimeout(() => {
+            if (shellFrameSession !== session) return;
+            log.err('The shell could not connect. Reopen the terminal to try again.');
+            removeShell();
+        }, 2000);
+        document.body.appendChild(frame);
+    } catch {
+        if (shellFrameSession !== session) return;
+        log.err('The shell could not open. Reopen the terminal to try again.');
+        removeShell();
+    }
 };
 function removeShell() {
-    if (!shellFrameSession) return;
-    window.removeEventListener('message', shellFrameSession.readyListener);
-    shellFrameSession.port.close();
-    shellFrameSession.frame.remove();
+    const session = shellFrameSession;
+    if (!session) return;
     shellFrameSession = null;
+    clearTimeout(session.timeout);
+    session.channel?.close();
+    session.port?.close();
+    session.frame?.remove();
+    if (session.id) chrome.runtime.sendMessage({ type: 'CANCEL_UI_SESSION', surface: 'shell', id: session.id }).catch(() => {});
 }

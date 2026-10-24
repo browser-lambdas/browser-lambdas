@@ -42,22 +42,20 @@ test('build resolves every page, manifest resource and module import without dup
         checkImports(output);
         const generated = readFileSync(join(output, 'generated/runtimeTemplate.js'), 'utf8');
         const { default: template } = await import(`data:text/javascript;base64,${Buffer.from(generated).toString('base64')}`);
-        assert.equal(template, readFileSync(join(extensionRoot, 'src/background/template.js'), 'utf8'));
+        assert.equal(template, readFileSync(join(extensionRoot, 'src/background/template.js'), 'utf8')
+            .replace('__SECURE_CHANNEL_SOURCE__;', () => readFileSync(join(extensionRoot, 'src/shared/secureChannel.js'), 'utf8')));
         assert.equal(existsSync(join(output, 'background/templateRaw.js')), false);
         assert.equal(existsSync(join(output, 'background/template.js')), false);
-        for (const resource of ['content/crypto.js', 'pages/workspace/workspace.css']) {
+        for (const resource of ['shared/secureChannel.js', 'pages/workspace/workspace.css']) {
             const source = readFileSync(join(extensionRoot, 'src', resource));
             const built = readFileSync(join(output, resource));
             assert.ok(built.length < source.length, `${resource} should be minified`);
         }
-        // A later classic script must still be able to call these shared helpers.
+        // The exact shared source is embedded in the injected runtime as well as loaded by pages.
         const context = createContext({ crypto, TextEncoder, TextDecoder, atob, btoa });
-        runInContext(readFileSync(join(output, 'content/crypto.js'), 'utf8'), context);
-        const roundTrip = await runInContext(`(async () => {
-            const key = encodeBase64(crypto.getRandomValues(new Uint8Array(32)));
-            return (await decrypt(await encrypt({ message: 'hello' }, key), key)).message;
-        })()`, context);
-        assert.equal(roundTrip, 'hello');
+        runInContext(readFileSync(join(output, 'shared/secureChannel.js'), 'utf8'), context);
+        assert.equal(runInContext('typeof createSecureChannel', context), 'function');
+        assert.ok(template.includes(readFileSync(join(extensionRoot, 'src/shared/secureChannel.js'), 'utf8')));
     } finally {
         rmSync(output, { recursive: true, force: true });
     }

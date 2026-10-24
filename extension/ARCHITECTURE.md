@@ -14,6 +14,8 @@ See the [root architecture](../ARCHITECTURE.md) for CLI sync and the runtime han
 | Shell | Terminal presentation and frame integration | `src/pages/shell/shellUi.js`, `src/pages/shell/shell-frame.js` |
 | Shared code | Record factories, access policies, update helpers and sync | `src/shared/` |
 
+The injected runtime embeds `shared/secureChannel.js` at build time; content scripts and the menu and shell iframes load that same source as a classic script. The rendezvous differs by surface, while authentication, encryption, ordering and failure handling share one implementation.
+
 The worker and workspace use ES modules. Content scripts are ordered classic scripts sharing globals; `manifest.chrome.json` defines their order. Keep that distinction when extracting shared code.
 
 ## Execution and access
@@ -26,7 +28,7 @@ Trigger commands run in listed order, waiting for each authenticated runtime res
 
 Startup handshakes have a one-second deadline, cleared when the runtime acknowledges readiness. Both endpoints can report startup failure so waiting trigger dispatchers can stop; the runtime reports errors before closing its encrypted channel.
 
-Background preparation gives each invocation fresh handshake tokens and a session key. The runtime and content script establish an encrypted `MessageChannel`; the bridge forwards privileged requests to background port handlers. Authentication of the channel and authorization of individual operations are separate checks.
+Background preparation gives each invocation fresh rendezvous tokens and a session key. The runtime and content script use the same `shared/secureChannel.js` protocol as the popup menu and shell. It derives directional AES-GCM keys with HKDF, binds messages to their session, purpose, direction and sequence, and exchanges encrypted proofs before delivering application messages. Strict sequence checks reject replay and reordering. Authentication, decryption or validation failures stop application traffic and close the channel, with a bounded attempt to notify the peer through an encrypted failure control. Runtime-side failures therefore also finish the background invocation and release nested callers; pending runtime API requests resolve to undefined. The bridge still forwards privileged requests to background handlers for authorization.
 
 `ctx.tabs.this().close()` uses `CLOSE_CURRENT_TAB`; the background verifies the invocation and derives the tab ID from the content-script port. It never identifies the current tab by URL.
 
@@ -48,7 +50,7 @@ Pending batches live in extension storage. `pendingUpdates.js` applies reviewed 
 
 ## UI and shared patterns
 
-The in-page popup uses an extension-origin iframe, like the shell. `popupMenuSessions.js` issues short-lived, single-use sessions bound to the content-script tab; only the popup frame can claim them. The content script transfers a private `MessageChannel` with a token delivered through extension messaging, never the DOM or a window message to the website. The frame checks its parent origin and token before enabling controls, and accepts only trusted clicks. Failed startup removes the frame and preserves the browser popup fallback.
+The in-page menu and shell use extension-origin iframes. `uiSessions.js` issues short-lived, single-use sessions bound to the content-script tab and requested interface; only the matching frame page can claim them. Each frame receives its credentials through extension messaging and accepts a transferred port only after checking its parent origin and private token. No readiness token is broadcast to the website. Both frames then use the shared encrypted channel with separate purposes, and accept only trusted user actions. Failed startup removes the frame; the menu also preserves the browser popup fallback.
 
 The workspace keeps view state in `workspace.js`. Pane layout, code editing, review rendering and HTML escaping have dedicated modules alongside it; look there before adding another implementation.
 
@@ -77,7 +79,7 @@ Removal conditions are review criteria, not scheduled removals. This is an initi
 
 ## Build and tests
 
-`scripts/build.js` generates the runtime module from `background/template.js`, minifies JavaScript/CSS without bundling, flattens public HTML pages to the build root and copies assets. The package version supplies the built manifest version.
+`scripts/build.js` generates the runtime module from `background/template.js` with the exact shared secure-channel source embedded, minifies JavaScript/CSS without bundling, flattens public HTML pages to the build root and copies assets. The package version supplies the built manifest version.
 
 Unit tests in `tests/` cover policy, records, modules and build behavior. E2E tests exercise the real extension with the CLI and local test pages. Commands and conventions live in [extension guidance](AGENTS.md) and [E2E guidance](e2e/AGENTS.md).
 

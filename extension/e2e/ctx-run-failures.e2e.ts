@@ -33,6 +33,8 @@ test('nested failures warn, resolve, and stop at the maximum depth', async ({
 	await createLambda(page, 'ctx-test-run-throwing-child', 'throw new Error("child exploded");', reactionTime);
 	await createLambda(page, 'ctx-test-run-missing-parent', "await ctx.run('ctx-test-run-does-not-exist'); console.log('parent continued');", reactionTime);
 	await createLambda(page, 'ctx-test-run-throwing-parent', "await ctx.run('ctx-test-run-throwing-child'); console.log('parent continued');", reactionTime);
+	await createLambda(page, 'ctx-test-run-broken-channel', "port.onmessage({ data: { invalid: 'ciphertext' } }); await new Promise(() => {});", reactionTime);
+	await createLambda(page, 'ctx-test-run-channel-parent', "await ctx.run('ctx-test-run-broken-channel'); console.log('parent after channel failure');", reactionTime);
 	await createLambda(page, 'ctx-test-run-recursive', "await ctx.run('ctx-test-run-recursive');", reactionTime);
 
 	await page.goto(localTestPage);
@@ -57,6 +59,13 @@ test('nested failures warn, resolve, and stop at the maximum depth', async ({
 	await input.press('Enter');
 	await expectOutput('Nested lambda request failed: child exploded');
 	await expectOutput('parent continued');
+
+	await input.fill('.clear');
+	await input.press('Enter');
+	await input.fill('ctx-test-run-channel-parent');
+	await input.press('Enter');
+	await expectOutput('Nested lambda request failed: The function runtime connection failed.');
+	await expectOutput('parent after channel failure');
 
 	await input.fill('.clear');
 	await input.press('Enter');

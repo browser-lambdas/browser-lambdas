@@ -6,9 +6,10 @@ const removePopupMenu = () => {
     popupMenuSession = null;
     clearTimeout(session.timeout);
     document.removeEventListener('mousedown', session.outsideClick, true);
+    session.channel?.close();
     session.port?.close();
     session.frame?.remove();
-    if (session.id) chrome.runtime.sendMessage({ type: 'CANCEL_POPUP_MENU', id: session.id }).catch(() => {});
+    if (session.id) chrome.runtime.sendMessage({ type: 'CANCEL_UI_SESSION', surface: 'menu', id: session.id }).catch(() => {});
     session.finish({ success: false, error: 'The menu was closed before it connected.' });
 };
 const togglePopupMenu = async () => {
@@ -21,13 +22,13 @@ const togglePopupMenu = async () => {
     const session = { finish, ready: false };
     popupMenuSession = session;
     try {
-        const registration = await chrome.runtime.sendMessage({ type: 'REGISTER_POPUP_MENU' });
+        const registration = await chrome.runtime.sendMessage({ type: 'REGISTER_UI_SESSION', surface: 'menu' });
         session.id = registration?.id;
         if (popupMenuSession !== session) {
-            if (session.id) await chrome.runtime.sendMessage({ type: 'CANCEL_POPUP_MENU', id: session.id });
+            if (session.id) await chrome.runtime.sendMessage({ type: 'CANCEL_UI_SESSION', surface: 'menu', id: session.id });
             return connected;
         }
-        if (!registration?.id || !registration.token) throw new Error('The menu session could not be created.');
+        if (!registration?.id || !registration.token || !registration.sessionKey) throw new Error('The menu session could not be created.');
         const frame = document.createElement('iframe');
         session.frame = frame;
         frame.id = MENU_HOST_ID;
@@ -45,32 +46,42 @@ const togglePopupMenu = async () => {
             if (popupMenuSession !== session || session.port) return;
             const channel = new MessageChannel();
             session.port = channel.port1;
-            channel.port1.onmessage = ({ data }) => {
-                if (popupMenuSession !== session) return;
-                if (data?.type === 'READY' && !session.ready) {
-                    session.ready = true;
-                    clearTimeout(session.timeout);
-                    finish({ success: true });
-                    chrome.runtime.sendMessage({ action: 'TEST_SCRIPT_INJECTION', url: location.hostname, tabId }, (response) => {
-                        if (popupMenuSession !== session) return;
-                        const error = chrome.runtime.lastError?.message || (response?.success === true ? '' : response?.error || 'Script execution is unavailable.');
-                        session.port.postMessage({ type: 'STATUS', error });
-                    });
-                    return;
+            session.channel = createSecureChannel({
+                port: channel.port1, key: registration.sessionKey, sessionId: registration.id,
+                purpose: 'menu', role: 'host', timeoutMs: 2000,
+                onMessage: (data) => {
+                    if (popupMenuSession !== session) return;
+                    if (!session.ready && data?.type !== 'READY') throw new Error('The menu did not authenticate.');
+                    if (data?.type === 'READY' && !session.ready) {
+                        session.ready = true;
+                        clearTimeout(session.timeout);
+                        finish({ success: true });
+                        chrome.runtime.sendMessage({ action: 'TEST_SCRIPT_INJECTION', url: location.hostname, tabId }, (response) => {
+                            if (popupMenuSession !== session) return;
+                            const error = chrome.runtime.lastError?.message || (response?.success === true ? '' : response?.error || 'Script execution is unavailable.');
+                            session.channel.send({ type: 'STATUS', error });
+                        });
+                        return;
+                    }
+                    if (!session.ready) return;
+                    if (data?.type === 'RESIZE' && Number.isFinite(data.height)) {
+                        frame.style.height = `${Math.max(100, Math.min(1000, data.height))}px`;
+                    } else if (data?.type === 'ACTION') {
+                        const paths = { workspace: 'workspace.html#functions', activity: `workspace.html?activityTabId=${tabId}#activity`, settings: 'settings.html' };
+                        if (Object.hasOwn(paths, data.action)) chrome.runtime.sendMessage({ action: 'OPEN_EXTENSION_PAGE', path: paths[data.action] });
+                        else if (data.action === 'shell') {
+                            removePopupMenu();
+                            showShell(tabId, false);
+                        } else if (data.action === 'close') removePopupMenu();
+                    }
+                },
+                onError: () => {
+                    if (popupMenuSession !== session) return;
+                    finish({ success: false, error: 'The encrypted menu connection failed. Try opening the menu again.' });
+                    log.err('The encrypted menu connection failed. Try opening the menu again.');
+                    removePopupMenu();
                 }
-                if (!session.ready) return;
-                if (data?.type === 'RESIZE' && Number.isFinite(data.height)) {
-                    frame.style.height = `${Math.max(100, Math.min(1000, data.height))}px`;
-                } else if (data?.type === 'ACTION') {
-                    const paths = { workspace: 'workspace.html#functions', activity: `workspace.html?activityTabId=${tabId}#activity`, settings: 'settings.html' };
-                    if (Object.hasOwn(paths, data.action)) chrome.runtime.sendMessage({ action: 'OPEN_EXTENSION_PAGE', path: paths[data.action] });
-                    else if (data.action === 'shell') {
-                        removePopupMenu();
-                        showShell(tabId, false);
-                    } else if (data.action === 'close') removePopupMenu();
-                }
-            };
-            channel.port1.start();
+            });
             // The token never appears in the page DOM or a message delivered to the website.
             frame.contentWindow.postMessage({ type: 'POPUP_MENU_CONNECT', token: registration.token }, url.origin, [channel.port2]);
         }, { once: true });
