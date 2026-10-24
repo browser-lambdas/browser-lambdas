@@ -1,6 +1,7 @@
 ### 0.2.1
 
 - Embed menu in iframe
+- Dependency updates
 
 ## 0.2.0
 
