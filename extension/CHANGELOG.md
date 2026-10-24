@@ -1,3 +1,7 @@
+### 0.2.1
+
+- Embed menu in iframe
+
 ## 0.2.0
 
 - Implemented project settings
