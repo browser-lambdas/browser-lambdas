@@ -32,11 +32,11 @@ Shell commands and URL triggers reach background execution, which resolves the l
 
 The runtime communicates through the content-script bridge to background handlers for storage, secrets and other privileged APIs. Page content and lambda execution contexts are distinct from trusted extension controls; granting access must remain a user decision.
 
-Each invocation gets a fresh session key and handshake tokens from the background worker. The runtime is injected with these values; the worker separately sends them to the content script through extension messaging.
+Each invocation gets a fresh session key and rendezvous tokens from the background worker. The runtime is injected with these values; the worker separately sends them to the content script through extension messaging.
 
-The content script and runtime rendezvous through `window.postMessage` using matching tokens and a handshake ID, then transfer a `MessageChannel` port. They exchange encrypted `HANDSHAKE_LAMBDA` and `HANDSHAKE_CONTENT` proofs before accepting normal channel messages. Subsequent runtime requests and responses use AES-GCM over that port; the session key is not sent through the window rendezvous.
+The content script and runtime rendezvous through `window.postMessage` using matching tokens and a handshake ID, then transfer a `MessageChannel` port. The runtime, in-page popup menu and shell share [one authenticated channel protocol](extension/src/shared/secureChannel.js), embedded into the runtime at build time. It derives directional AES-GCM keys, exchanges encrypted proofs and binds packets to their session, purpose, direction and sequence. Session keys never travel through the window rendezvous.
 
-If the handshake times out or encrypted messages cannot be decrypted, the port closes. Establishing this channel does not replace the access-policy checks on privileged operations.
+Failed authentication, invalid ciphertext, replay and reordering stop application traffic and close the port, with a bounded encrypted failure notification to the peer. Handshakes have deadlines; running lambdas have no execution timeout. Establishing this channel does not replace access-policy checks or isolate main-world JavaScript from page API manipulation.
 
 Start with [execution](extension/src/background/executeLambda.js), [runtime source](extension/src/background/template.js), [content messages](extension/src/content/messages.js) and [access policy](extension/src/shared/accessPolicy.js). Resource data and settings live in `chrome.storage.local`.
 

@@ -20,8 +20,6 @@ const prepareLambda = async (lambda, userInput, requestId, executionWorld, neste
         qToken: crypto.randomUUID(),
         aToken: crypto.randomUUID(),
         handshakeId: crypto.randomUUID(),
-        handshakeLambdaToken: crypto.randomUUID(),
-        handshakeContentToken: crypto.randomUUID(),
         sessionKey: await generateSessionKey(),
         requestId,
         nestedDepth,

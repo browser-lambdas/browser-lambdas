@@ -3,10 +3,10 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
-test('secure content relay overwrites forged execution worlds on all item requests', async () => {
+test('secure content relay overwrites forged execution worlds and invocation tokens', async () => {
     const source = await readFile(new URL('../src/content/messages.js', import.meta.url), 'utf8');
     for (const world of ['USER_SCRIPT_WORLD', 'MAIN_WORLD']) {
-        let runtimeListener, windowListener, responseListener, port;
+        let runtimeListener, windowListener, responseListener, deliver;
         const forwarded = [];
         const window = { addEventListener: (type, listener) => { windowListener = listener; }, postMessage: () => {} };
         const bgPort = {
@@ -17,18 +17,24 @@ test('secure content relay overwrites forged execution worlds on all item reques
             window, chrome: { runtime: { connect: () => bgPort, onMessage: { addListener(listener) { runtimeListener = listener; } }, sendMessage: (_msg, callback) => callback({ tabId: 1 }) } },
             log: { dbg() {}, err() {} }, crypto: { randomUUID: () => 'id' },
             setInterval() {}, clearInterval() {}, setTimeout() {}, clearTimeout() {},
-            encrypt: async (msg) => msg, decrypt: async (msg) => msg,
-            MessageChannel: class { constructor() { port = this.port1 = { postMessage() {}, close() {} }; this.port2 = {}; } }
+            createSecureChannel(options) { deliver = options.onMessage; return { ready: Promise.resolve(), send() {}, close() {} }; },
+            MessageChannel: class { constructor() { this.port1 = {}; this.port2 = {}; } }
         };
         vm.runInNewContext(source, sandbox);
-        runtimeListener({ type: 'BACKGROUND_INIT_HANDSHAKE', aToken: 'token', requestId: 'channel', handshakeLambdaToken: 'lambda', executionWorld: world }, {}, () => {});
+        runtimeListener({ type: 'BACKGROUND_INIT_HANDSHAKE', aToken: 'token', requestId: 'channel', invocationToken: 'trusted-invocation', executionWorld: world }, {}, () => {});
         await windowListener({ source: window, data: { type: 'aToken', aToken: 'token' } });
-        await port.onmessage({ data: { type: 'HANDSHAKE_LAMBDA', token: 'lambda' } });
         for (const type of ['GET_SECRET_REQUEST', 'GET_STORAGE_REQUEST', 'SET_STORAGE_REQUEST']) {
-            await port.onmessage({ data: { type, id: type, key: 'key', executionWorld: world === 'MAIN_WORLD' ? 'USER_SCRIPT_WORLD' : 'MAIN_WORLD' } });
+            await deliver({ type, id: type, key: 'key', invocationToken: 'forged-invocation', executionWorld: world === 'MAIN_WORLD' ? 'USER_SCRIPT_WORLD' : 'MAIN_WORLD' });
             assert.equal(forwarded.at(-1).executionWorld, world);
+            assert.equal(forwarded.at(-1).invocationToken, 'trusted-invocation');
             assert.equal(forwarded.at(-1).id, type);
         }
+        await deliver({ type: 'FUNCTION_CALL_REQUEST', id: 'nested', userInput: 'helper', invocationToken: 'forged-invocation' });
+        assert.equal(forwarded.at(-1).type, 'EXECUTE_LAMBDA');
+        assert.equal(forwarded.at(-1).invocationToken, 'trusted-invocation');
+        await deliver({ type: 'LAMBDA_RESULT', id: 'forged-request', invocationToken: 'forged-invocation', result: { return: 1 } });
+        assert.equal(forwarded.at(-1).id, 'channel');
+        assert.equal(forwarded.at(-1).invocationToken, 'trusted-invocation');
     }
 });
 
@@ -42,7 +48,7 @@ test('shared persistence loads as a classic content script without eager module 
 test('startup watchdog waits for authenticated runtime readiness and reports missing readiness', async () => {
     const source = await readFile(new URL('../src/content/messages.js', import.meta.url), 'utf8');
     for (const ready of [false, true]) {
-        let runtimeListener, windowListener, responseListener, port, closed = false;
+        let runtimeListener, windowListener, responseListener, deliver, closed = false;
         let timerId = 0;
         const timers = new Map();
         const forwarded = [];
@@ -56,15 +62,14 @@ test('startup watchdog waits for authenticated runtime readiness and reports mis
             log: { dbg() {}, err() {} }, crypto: { randomUUID: () => 'id' },
             setInterval() {}, clearInterval() {},
             setTimeout(callback) { timers.set(++timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); },
-            encrypt: async (msg) => msg, decrypt: async (msg) => msg,
-            MessageChannel: class { constructor() { port = this.port1 = { postMessage() {}, close() { closed = true; } }; this.port2 = {}; } }
+            createSecureChannel(options) { deliver = options.onMessage; return { ready: Promise.resolve(), send() {}, close() { closed = true; } }; },
+            MessageChannel: class { constructor() { this.port1 = {}; this.port2 = {}; } }
         });
-        runtimeListener({ type: 'BACKGROUND_INIT_HANDSHAKE', aToken: 'token', requestId: 'channel', handshakeLambdaToken: 'lambda', invocationToken: 'trusted-invocation' }, {}, () => {});
+        runtimeListener({ type: 'BACKGROUND_INIT_HANDSHAKE', aToken: 'token', requestId: 'channel', invocationToken: 'trusted-invocation' }, {}, () => {});
         await windowListener({ source: window, data: { type: 'aToken', aToken: 'token' } });
-        await port.onmessage({ data: { type: 'HANDSHAKE_LAMBDA', token: 'lambda' } });
         assert.equal(timers.size, 1, 'authenticating the client must not cancel the readiness deadline');
         if (ready) {
-            await port.onmessage({ data: { type: 'LAMBDA_READY' } });
+            await deliver({ type: 'LAMBDA_READY' });
             assert.equal(timers.size, 0);
             assert.equal(closed, false);
             assert.equal(forwarded.length, 0);

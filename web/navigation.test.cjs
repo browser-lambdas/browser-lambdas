@@ -15,7 +15,8 @@ test('category navigation, deep links, history and responsive layout', async () 
 			demo: ['Demo', 'Preloaded functions', 'hello', 'vi-nav'],
 			intro: ['Hack your browsing', 'How It Works'],
 			'quick-start': ['Hello world', 'Whats next?'],
-			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Run', 'Tabs'],
+			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Run', 'Chain', 'Tabs'],
+			security: ['Security', 'Approach', 'Bad Pages', 'Execution Worlds', 'Securing communication paths', 'baah CLI'],
 			baah: ['baah', 'Connections', 'Commands', 'baah init .', 'baah set', 'baah push', 'baah ls', 'baah rm', 'baah.toml'],
 		};
 		async function check(category) {

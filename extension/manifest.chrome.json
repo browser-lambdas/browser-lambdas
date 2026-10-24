@@ -12,7 +12,7 @@
 		"<all_urls>"
 	],
 	"web_accessible_resources": [{
-		"resources": ["shell.html"],
+		"resources": ["shell.html", "popup-menu.html"],
 		"matches": ["<all_urls>"]
 	}],
 	"action": {
@@ -38,7 +38,7 @@
 			"js": [
 				"shared/storage.js",
 				"shared/activityLog.js",
-				"content/crypto.js",
+				"shared/secureChannel.js",
 				"content/parseInput.js",
 				"content/popupMenu.js",
 				"content/messages.js",

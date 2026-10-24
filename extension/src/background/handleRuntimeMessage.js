@@ -3,10 +3,10 @@ import { saveProjectSettings } from '../shared/projectPolicy.js';
 import { SCRIPT_STATUS_CACHE_KEY } from './constants.js';
 import { executeLambda } from './executeLambda.js';
 import { runTriggers } from './runTriggers.js';
+import { handleUiSession } from './uiSessions.js';
 import { appendActivityLog, log } from './activityLog.js';
 // Track which documents already executed triggers to avoid duplicates per page load
 const triggeredDocs = new Set();
-const shellTokens = new Map();
 const SCRIPT_STATUS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const getScriptStatusCache = async () => {
     const raw = (await chrome.storage.local.get(SCRIPT_STATUS_CACHE_KEY))[SCRIPT_STATUS_CACHE_KEY];
@@ -29,6 +29,8 @@ const setScriptStatusCache = async (cache) => {
     });
 };
 export function handleRuntimeMessage(message, sender, sendResponse) {
+    const uiSession = handleUiSession(message, sender, sendResponse);
+    if (uiSession !== undefined) return uiSession;
     if (message?.type === 'WORKSPACE_PROJECT_SETTINGS_UPDATE') {
         if (!isWorkspaceSender(sender)) {
             sendResponse({ success: false, error: 'Project settings can only be changed in the workspace.' });
@@ -48,17 +50,6 @@ export function handleRuntimeMessage(message, sender, sendResponse) {
         return true;
     }
 
-    if (message?.type === 'REGISTER_SHELL_TOKEN' && sender.tab?.id != null && typeof message.token === 'string') {
-        shellTokens.set(sender.tab.id, message.token);
-        sendResponse({ success: true });
-        return false;
-    }
-    if (message?.type === 'CLAIM_SHELL_TOKEN' && sender.tab?.id != null) {
-        const token = shellTokens.get(sender.tab.id);
-        shellTokens.delete(sender.tab.id);
-        sendResponse({ token });
-        return false;
-    }
     if ('type' in message && message.type === 'ACTIVITY_LOG') {
         appendActivityLog(
             ['debug', 'error', 'info'].includes(message.level) ? message.level : 'info',
@@ -76,12 +67,12 @@ export function handleRuntimeMessage(message, sender, sendResponse) {
                 sendResponse({ success: false, error: 'No active tab found.' });
                 return;
             }
-            chrome.tabs.sendMessage(tabId, { action: 'OPEN_POPUP_MENU' }, () => {
+            chrome.tabs.sendMessage(tabId, { action: 'OPEN_POPUP_MENU' }, (response) => {
                 if (chrome.runtime.lastError) {
                     sendResponse({ success: false, error: chrome.runtime.lastError.message });
                     return;
                 }
-                sendResponse({ success: true });
+                sendResponse(response || { success: false, error: 'The menu did not respond.' });
             });
         });
         return true;

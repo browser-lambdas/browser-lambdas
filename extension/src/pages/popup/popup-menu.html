@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Lambdas menu</title>
+  <link rel="stylesheet" href="pages/popup/popup-menu.css">
+  <script src="shared/secureChannel.js" defer></script>
+  <script src="pages/popup/popup-menu.js" defer></script>
+</head>
+<body>
+
+	<div class="bl-menu" hidden data-testid="popup-menu">
+		<div class="bl-top">
+			<div class="bl-header">
+				<span class="bl-title">browser lambdas</span>
+				<button class="bl-close" data-action="close" aria-label="Close menu">×</button>
+			</div>
+			<p class="bl-warning" data-testid="popup-menu-status" hidden></p>
+		</div>
+		<div class="bl-divider"></div>
+		<div class="bl-items">
+			<button data-action="workspace">[ workspace ]</button>
+			<button data-action="shell">[ open shell ]</button>
+			<button data-action="activity">[ activity log ]</button>
+			<button data-action="settings">[ settings ]</button>
+		</div>
+	</div>
+</body>
+</html>
