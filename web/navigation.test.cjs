@@ -17,7 +17,7 @@ test('category navigation, deep links, history and responsive layout', async () 
 			'quick-start': ['Hello world', 'Whats next?'],
 			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Run', 'Chain', 'Tabs'],
 			security: ['Security', 'Approach', 'Bad Pages', 'Execution Worlds', 'Securing communication paths', 'baah CLI'],
-			baah: ['baah', 'Connections', 'Commands', 'baah init .', 'baah set', 'baah push', 'baah ls', 'baah rm', 'baah.toml'],
+			baah: ['baah', 'Connections', 'Commands', 'baah init .', 'baah set', 'baah push', 'baah ls', 'baah info', 'baah rm', 'baah.toml'],
 		};
 		async function check(category) {
 			assert.deepEqual(await page.locator('.doc-group:visible').evaluateAll(groups => groups.map(g => g.dataset.category)), [category]);
