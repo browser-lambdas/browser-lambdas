@@ -294,10 +294,17 @@ function listConnections() {
     console.log("Run baah set <name> to add one.");
     return;
   }
-  console.log(chalk.cyan("Saved baah connections:"));
   for (const name of names) {
-    console.log(` • ${chalk.green(name)} (port ${connections[name].port})`);
+    console.log(` • ${chalk.green(name)}`);
   }
+}
+
+function showConnectionInfo(name) {
+  const connections = readConnections();
+  if (!Object.hasOwn(connections, name)) {
+    throw new Error(`Connection '${name}' not found. Run baah set ${name} first.`);
+  }
+  console.log(`Push listener: ws://${LOOPBACK_HOST}:${connections[name].port}`);
 }
 
 function loadConfig() {
@@ -730,6 +737,15 @@ async function main() {
     return;
   }
 
+  if (args[0] === "info") {
+    const name = args[1];
+    if (!name || name.startsWith("-") || args.length !== 2) {
+      throw new Error("Usage: baah info <name>");
+    }
+    showConnectionInfo(name);
+    return;
+  }
+
   if (args[0] === "set") {
     const name = args[1];
     const usage = "Usage: baah set <name> [--token TOKEN] [--port PORT]";
@@ -806,6 +822,7 @@ async function main() {
   baah set <name> [--token TOKEN] [--port PORT]
                                    Save a named connection to your browser extension
   baah ls                          List saved connections
+  baah info <name>                 Show saved connection details
   baah rm <name>                   Remove a saved connection
   baah push <name>                 Push using a saved connection`;
   if (args.length === 0 || (args.length === 1 && ["--help", "-h"].includes(args[0]))) {

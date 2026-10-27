@@ -531,6 +531,7 @@ Usage:
   baah set &lt;name&gt; [--token TOKEN] [--port PORT]
                                    Save a named connection to your browser extension
   baah ls                          List saved connections
+  baah info &lt;name&gt;                 Show saved connection details
   baah rm &lt;name&gt;                   Remove a saved connection
   baah push &lt;name&gt;                 Push using a saved connection</code></pre>
 							</section>
@@ -595,9 +596,15 @@ $ baah set chrome --port 3333
 								<h2 id="ls"><code>baah ls</code></h2>
 								<p>List all connections.</p>
 								<pre><code data-language="shell">$ baah ls
-Saved baah connections:
- • chrome (port 4455)
- • safari (port 4455)</code></pre>
+ • chrome
+ • safari</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="info"><code>baah info</code></h2>
+								<p>Show info on each connection.</p>
+								<pre><code data-language="shell">$ baah info chrome
+Push listener: ws://127.0.0.1:4455</code></pre>
 							</section>
 
 							<section class="doc-section">

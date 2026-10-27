@@ -22,7 +22,7 @@ The package is an ES module targeting Node.js 24+. Its `baah` executable points 
 
 Connections are separate from project configuration. Named `{ token, port }` entries live in the OS-specific user configuration directory under `baah/connections.json`. Multiple projects can use the same connection; changing its port affects all of them. The default port is `4455`.
 
-`set`, `ls` and `rm` manage that store. Interactive token entry is hidden; scripted setup accepts explicit arguments. Invalid connection data produces an error rather than silently replacing the store. Tests redirect the home directory through a test-only preload, not a production configuration override.
+`set`, `ls`, `info` and `rm` manage that store. `ls` lists names; `info <name>` shows the saved push listener address without exposing tokens or probing the browser. Interactive token entry is hidden; scripted setup accepts explicit arguments. Invalid connection data produces an error rather than silently replacing the store. Tests redirect the home directory through a test-only preload, not a production configuration override.
 
 ## Scaffolding
 
