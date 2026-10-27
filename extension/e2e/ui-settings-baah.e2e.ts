@@ -8,10 +8,10 @@ test('global settings group controls and enforce review and polling in open proj
 		await chrome.storage.local.set({ local_storage_key_lambdas: JSON.stringify([{ id: 'settings-project-function', name: 'settings-project-function', project: 'settings-project', func: '' }]) });
 	});
 	await page.reload();
-	const shell = page.getByRole('region', { name: 'Shell', exact: true });
+	const shell = page.getByRole('region', { name: 'Terminal', exact: true });
 	await expect(shell.getByLabel('Key binding', { exact: true })).toBeVisible();
 	await expect(shell.getByRole('button', { name: 'Keep Output History', exact: true })).toBeVisible();
-	await expect(shell.getByRole('button', { name: 'Always Show Shell', exact: true })).toBeVisible();
+	await expect(shell.getByRole('button', { name: 'Always Show Terminal', exact: true })).toBeVisible();
 	await expect(shell.getByRole('button', { name: 'Clear', exact: true })).toBeVisible();
 	const cli = page.getByRole('region', { name: 'Baah CLI', exact: true });
 	for (const heading of ['Token', 'Polling', 'Review']) await expect(cli.getByRole('heading', { name: heading, exact: true })).toBeVisible();

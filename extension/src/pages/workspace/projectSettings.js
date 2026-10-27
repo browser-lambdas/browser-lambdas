@@ -63,7 +63,7 @@ export function mountProjectSettings(container, { project, view, settings, globa
     });
     panel.setAttribute('aria-labelledby', `${prefix}-tab-${selected}`);
     const enabledLabel = selected === 'styles' ? 'Enable styles in this project' : 'Enable automatic trigger execution in this project';
-    const enabledDescription = selected === 'styles' ? 'Allow styles in this project to be applied to the shell.' : 'Allow triggers in this project to run automatically when their URL patterns match.';
+    const enabledDescription = selected === 'styles' ? 'Allow styles in this project to be applied to the terminal.' : 'Allow triggers in this project to run automatically when their URL patterns match.';
     panel.innerHTML = `${selected === 'functions' ? row('mode', 'Default execution world', 'Select the world functions in this project use by default.', true) : ''}
       <section class="project-settings-group" aria-labelledby="${prefix}-execution"><h3 id="${prefix}-execution">Execution</h3><div class="project-settings-section">
         ${selected === 'functions' ? '' : row('enabled', enabledLabel, enabledDescription)}

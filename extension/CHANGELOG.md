@@ -1,3 +1,15 @@
+## 0.4.0
+
+- Added theme previews
+
+## 0.3.0
+
+- Add settings to control prompt marker and enable/disable key binding
+
+### 0.2.1
+
+- Embed menu in iframe
+
 ## 0.2.0
 
 - Implemented project settings

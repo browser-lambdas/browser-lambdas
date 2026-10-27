@@ -3,7 +3,7 @@ import { test, expect } from './fixtures';
 // Ensure tests have enough time to build extension and run
 test.describe.configure({ timeout: 120_000 });
 
-test('popup open shell injects UI into active tab', async ({
+test('popup open terminal injects UI into active tab', async ({
 	page,
 	extensionId,
 	localTestPage,
@@ -154,7 +154,7 @@ test('popup retains fallback controls when the page prevents iframe startup', as
 	await page.evaluate(() => new MutationObserver(() => document.getElementById('browser-lambdas-popup-menu-host')?.remove()).observe(document.body, { childList: true }));
 	const popup = await page.context().newPage();
 	await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-	await expect(popup.getByRole('button', { name: /open shell/i })).toBeVisible();
+	await expect(popup.getByRole('button', { name: /open terminal/i })).toBeVisible();
 	await expect(popup.getByRole('link', { name: '[ workspace ]' })).toBeVisible();
 	await expect(page.locator('#browser-lambdas-popup-menu-host')).toHaveCount(0);
 });
@@ -261,14 +261,14 @@ test('shell rejects synthetic command input and control clicks while trusted inp
 	await expect(input).toBeVisible();
 	await input.fill('shell-isolation-probe');
 	await input.evaluate(element => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
-	await shell.getByRole('button', { name: 'Close shell' }).evaluate((button: HTMLElement) => button.click());
-	await shell.getByRole('button', { name: 'Set shell position' }).evaluate((button: HTMLElement) => button.click());
+	await shell.getByRole('button', { name: 'Close terminal' }).evaluate((button: HTMLElement) => button.click());
+	await shell.getByRole('button', { name: 'Set terminal position' }).evaluate((button: HTMLElement) => button.click());
 	await expect(input).toBeVisible();
 	await expect(shell.locator('#shell-position-menu')).toBeHidden();
 	expect(await page.evaluate(() => document.documentElement.dataset.shellProbe)).toBeUndefined();
 	await input.press('Enter');
 	await expect.poll(() => page.evaluate(() => document.documentElement.dataset.shellProbe)).toBe('executed');
-	await shell.getByRole('button', { name: 'Close shell' }).click();
+	await shell.getByRole('button', { name: 'Close terminal' }).click();
 	await expect(page.locator('#browser-lambdas-shell')).toHaveCount(0);
 });
 
@@ -382,7 +382,7 @@ test('shell bounds are isolated per page and settings controls do not jump', asy
 	await page.keyboard.press('Meta+k');
 	const frame = page.locator('#browser-lambdas-shell');
 	const initial = await frame.boundingBox();
-	await page.frameLocator('#browser-lambdas-shell').getByRole('button', { name: 'Set shell position' }).click();
+	await page.frameLocator('#browser-lambdas-shell').getByRole('button', { name: 'Set terminal position' }).click();
 	await page.frameLocator('#browser-lambdas-shell').getByRole('button', { name: 'Place on left' }).click();
 	const placed = await frame.boundingBox();
 	expect(placed?.x).toBe(20);
@@ -401,7 +401,7 @@ test('shell bounds are isolated per page and settings controls do not jump', asy
 	await page.goto(`chrome-extension://${extensionId}/settings.html`);
 	const scroll = page.locator('.settings-scroll');
 	await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
-	const alwaysOn = page.getByText('Always Show Shell').locator('..').getByRole('button');
+	const alwaysOn = page.getByText('Always Show Terminal').locator('..').getByRole('button');
 	await alwaysOn.scrollIntoViewIfNeeded();
 	const before = await scroll.evaluate((element) => element.scrollTop);
 	await alwaysOn.click();

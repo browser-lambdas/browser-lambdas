@@ -1,8 +1,13 @@
+import { createTerminalThemePicker } from './terminalThemes.js';
+
 const app = document.getElementById('app');
+const terminalThemePicker = createTerminalThemePicker();
 let cleanupBaahSync = null;
 
 const settingKeys = [
   LOCAL_STORAGE_KEY_KEYBINDING,
+  LOCAL_STORAGE_KEY_KEYBINDING_ENABLED,
+  LOCAL_STORAGE_KEY_SHELL_PROMPT,
   LOCAL_STORAGE_KEY_STICKYSHELL,
   LOCAL_STORAGE_KEY_SHELL_ALWAYS_ON,
   LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS,
@@ -15,6 +20,10 @@ const settingKeys = [
 
 const state = {
   keybinding: { meta: true, ctrl: false, key: 'k' },
+  keybindingEnabled: true,
+  shellPrompt: '>',
+  shellPromptDirty: false,
+  shellPromptNotice: '',
   stickyShell: false,
   alwaysOn: false,
   allowMainWorldSecrets: false,
@@ -72,28 +81,38 @@ function renderSettings() {
     <main class="settings-card">
       <header class="settings-section settings-header">
         <h1 class="settings-page-title">${lucideIcon('settings')}<span>Settings</span></h1>
-        <p>Manage your shell, CLI connections, and security.</p>
+        <p>Manage your terminal, CLI connections, and security.</p>
       </header>
 
       <section class="settings-section" aria-labelledby="shell-settings">
-        <h2 class="settings-group-title" id="shell-settings">Shell</h2>
-        <div class="settings-block settings-control-row">
-          <div class="settings-control-copy">
-            <h3 class="section-title"><label for="shell-keybinding">Key binding</label></h3>
-            <p class="section-description">Choose a shortcut to toggle the shell.</p>
+        <h2 class="settings-group-title" id="shell-settings">Terminal</h2>
+        <div class="settings-block" id="keybinding-settings">
+          <h3 class="section-title"><label for="shell-keybinding">Key binding</label></h3>
+          <p class="section-description">Choose a shortcut to toggle the terminal.</p>
+          <div class="toggle-row"><div>Enable key binding</div>${toggle('Enable key binding', state.keybindingEnabled, 'toggle-keybinding')}</div>
+          <div class="settings-control-row">
             <p class="hint">Press a key combination to set a shortcut.</p>
+            <input id="shell-keybinding" class="text-input keybinding ${state.capturingKeybinding ? 'capturing' : ''}" type="text" value="${escapeHtml(keybindingDisplayText())}" data-action="keybinding" readonly ${state.keybindingEnabled ? '' : 'disabled'} />
           </div>
-          <input id="shell-keybinding" class="text-input keybinding ${state.capturingKeybinding ? 'capturing' : ''}" type="text" value="${escapeHtml(keybindingDisplayText())}" data-action="keybinding" readonly />
         </div>
-        <div class="toggle-row"><div>Keep Output History</div>${toggle('Keep Output History', state.stickyShell, 'toggle-sticky')}</div>
-        <div class="toggle-row"><div>Always Show Shell</div>${toggle('Always Show Shell', state.alwaysOn, 'toggle-always-on')}</div>
         <div class="settings-block settings-control-row">
           <div class="settings-control-copy">
-            <h3 class="section-title">Clear shell history</h3>
+            <h3 class="section-title"><label for="shell-prompt">Prompt</label></h3>
+            <p class="section-description" id="shell-prompt-description">Set custom prompt marker</p>
+          </div>
+          <input id="shell-prompt" class="text-input shell-prompt" type="text" value="${escapeHtml(state.shellPrompt)}" data-action="shell-prompt" aria-describedby="shell-prompt-description shell-prompt-notice" />
+        </div>
+        <p class="hint" id="shell-prompt-notice" role="status" ${state.shellPromptNotice ? '' : 'hidden'}>${escapeHtml(state.shellPromptNotice)}</p>
+        <div class="toggle-row"><div>Keep Output History</div>${toggle('Keep Output History', state.stickyShell, 'toggle-sticky')}</div>
+        <div class="toggle-row"><div>Always Show Terminal</div>${toggle('Always Show Terminal', state.alwaysOn, 'toggle-always-on')}</div>
+        <div class="settings-block settings-control-row">
+          <div class="settings-control-copy">
+            <h3 class="section-title">Clear terminal history</h3>
             <p class="section-description">Clear output and command history from all open tabs.</p>
           </div>
           ${button('Clear', 'clear-history', { icon: lucideIcon('trash') })}
         </div>
+        <div data-terminal-theme-picker></div>
       </section>
 
       <section class="settings-section" aria-labelledby="baah-cli-settings">
@@ -140,6 +159,7 @@ function renderSettings() {
 function render() {
   const scrollTop = document.querySelector('.settings-scroll')?.scrollTop || 0;
   app.innerHTML = `<div class="settings-shell">${renderAppNav({ settingsActive: true })}${renderSettings()}</div>`;
+  terminalThemePicker.mount(app.querySelector('[data-terminal-theme-picker]'));
   document.querySelector('.settings-scroll')?.scrollTo({ top: scrollTop });
 }
 
@@ -159,6 +179,8 @@ async function loadBaahToken() {
 
 async function loadSettings() {
   state.keybinding = await getKeyBinding();
+  state.keybindingEnabled = await getKeyBindingEnabled();
+  if (!state.shellPromptDirty) state.shellPrompt = await getShellPrompt();
   state.stickyShell = await getStickyShell();
   state.alwaysOn = await getShellAlwaysOn();
   state.allowMainWorldSecrets = await getAllowMainWorldSecrets();
@@ -185,7 +207,7 @@ async function clearShellHistory() {
     }
   }));
   await setInputHistory([]);
-  state.notice = 'All shell histories cleared.';
+  state.notice = 'All terminal histories cleared.';
 }
 
 async function copyToken() {
@@ -211,7 +233,18 @@ app.addEventListener('click', async (event) => {
   if (!target) return;
 
   const action = target.dataset.action;
-  if (action === 'ws-port') return;
+  if (action === 'ws-port' || action === 'shell-prompt') return;
+  if (action === 'toggle-keybinding') {
+    try {
+      await setKeyBindingEnabled(!state.keybindingEnabled);
+      state.capturingKeybinding = false;
+      state.notice = '';
+    } catch {
+      state.notice = 'Unable to save the keyboard shortcut setting. Please try again.';
+      render();
+      return;
+    }
+  }
   if (action === 'keybinding') {
     state.capturingKeybinding = true;
     render();
@@ -267,6 +300,10 @@ app.addEventListener('input', (event) => {
     // event replaces the input element and drops focus after one character.
     state.wsPort = target.value;
   }
+  if (target.dataset.action === 'shell-prompt') {
+    state.shellPrompt = target.value;
+    state.shellPromptDirty = true;
+  }
 });
 
 app.addEventListener('change', async (event) => {
@@ -288,6 +325,37 @@ app.addEventListener('change', async (event) => {
   state.wsPort = await getWsPort();
   render();
 });
+
+app.addEventListener('focusout', async (event) => {
+  if (event.target?.dataset?.action !== 'shell-prompt' || !state.shellPromptDirty) return;
+  const value = state.shellPrompt;
+  const prompt = normalizeShellPrompt(value);
+  if (prompt === null) {
+    state.shellPromptNotice = 'Use one line, without control characters.';
+  } else {
+    try {
+      await setShellPrompt(value);
+      if (state.shellPrompt === value) {
+        state.shellPromptDirty = false;
+        state.shellPrompt = prompt;
+        state.shellPromptNotice = '';
+      }
+    } catch {
+      state.shellPromptNotice = 'Unable to save the terminal prompt. Your edit is kept; leave the field again to retry.';
+    }
+  }
+  updateShellPromptControl();
+});
+
+function updateShellPromptControl() {
+  const input = document.getElementById('shell-prompt');
+  if (input && !state.shellPromptDirty) input.value = state.shellPrompt;
+  const notice = document.getElementById('shell-prompt-notice');
+  if (notice) {
+    notice.textContent = state.shellPromptNotice;
+    notice.hidden = !state.shellPromptNotice;
+  }
+}
 
 window.addEventListener('keydown', async (event) => {
   const target = event.target;
@@ -324,6 +392,13 @@ window.addEventListener('keydown', async (event) => {
 window.addEventListener('beforeunload', () => cleanupBaahSync?.());
 
 chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area === 'local' && [LOCAL_STORAGE_KEY_SHELLCSS, LOCAL_STORAGE_KEY_SHELL_PROMPT, 'local_storage_key_project_settings'].some((key) => Object.hasOwn(changes, key))) void terminalThemePicker.refresh();
+  if (area === 'local' && changes[LOCAL_STORAGE_KEY_SHELL_PROMPT]) {
+    const prompt = await getShellPrompt();
+    if (!state.shellPromptDirty) state.shellPrompt = prompt;
+    updateShellPromptControl();
+    if (Object.keys(changes).length === 1) return;
+  }
   if (area === 'local' && settingKeys.some((key) => Object.hasOwn(changes, key))) {
     await loadSettings();
     render();

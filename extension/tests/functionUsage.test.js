@@ -4,7 +4,7 @@ import { functionUsageExample } from '../src/shared/functionUsage.js';
 
 test('usage generates shell and current-tab calls from destructured positional arguments', () => {
     const usage = functionUsageExample({ name: 'do-something', func: 'const { 0: first, 1: second } = ctx.args.all();' });
-    assert.equal(usage, '# invoke in shell\n> do-something pos1 pos2\n\n# tabs\nawait ctx.tabs.this().run("do-something pos1 pos2");');
+    assert.equal(usage, '# invoke in terminal\n> do-something pos1 pos2\n\n# tabs\nawait ctx.tabs.this().run("do-something pos1 pos2");');
 });
 
 test('usage recognizes named flags, aliases and indexed accesses without executing code', () => {
@@ -23,6 +23,6 @@ console.log(ctx.args.all()[1]);` });
 });
 
 test('usage escapes commands in the JavaScript example and tolerates unfinished code', () => {
-    assert.equal(functionUsageExample({ name: 'new-name', func: 'const { unfinished' }), '# invoke in shell\n> new-name\n\n# tabs\nawait ctx.tabs.this().run("new-name");');
+    assert.equal(functionUsageExample({ name: 'new-name', func: 'const { unfinished' }), '# invoke in terminal\n> new-name\n\n# tabs\nawait ctx.tabs.this().run("new-name");');
     assert.match(functionUsageExample({ name: 'say"hi' }), /run\("say\\"hi"\)/);
 });

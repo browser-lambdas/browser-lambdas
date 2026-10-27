@@ -4,6 +4,8 @@ const registerKeyBinding = async (tabId, useHistory) => {
     document.addEventListener('keydown', async (event) => {
         if (!event.isTrusted)
             return;
+        if (!await getKeyBindingEnabled())
+            return;
         const currentShortcut = await getKeyBinding();
         if (event.metaKey === Boolean(currentShortcut.meta) &&
             event.ctrlKey === Boolean(currentShortcut.ctrl) &&

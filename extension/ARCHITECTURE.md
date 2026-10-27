@@ -50,6 +50,10 @@ Pending batches live in extension storage. `pendingUpdates.js` applies reviewed 
 
 ## UI and shared patterns
 
+The user-facing command interface is named Terminal. Internal shell paths, CSS selectors, message names and storage keys remain stable to preserve saved settings and custom styles.
+
+Style settings preview the current CSS draft; global Terminal settings browse saved styles with search and project grouping. Both use a static mock terminal in an opaque sandboxed iframe with scripts and external requests blocked. Previewing does not activate a style; Set theme preserves project restrictions and saves the workspace draft when used there. When no style is selected, the built-in default is used.
+
 The in-page menu and shell use extension-origin iframes. `uiSessions.js` issues short-lived, single-use sessions bound to the content-script tab and requested interface; only the matching frame page can claim them. Each frame receives its credentials through extension messaging and accepts a transferred port only after checking its parent origin and private token. No readiness token is broadcast to the website. Both frames then use the shared encrypted channel with separate purposes, and accept only trusted user actions. Failed startup removes the frame; the menu also preserves the browser popup fallback.
 
 The workspace keeps view state in `workspace.js`. Pane layout, code editing, review rendering and HTML escaping have dedicated modules alongside it; look there before adding another implementation.
@@ -63,6 +67,8 @@ Storage and secret caller allowlists use background-issued invocation tokens, ne
 Sync buffers batches before checking project polling, review and locks. Resource collections are written together; deletions require explicit manifest entries, and manual approval rechecks locks against the latest project policy. Locks reject synced changes while installed resources remain usable.
 
 The website reuses the argument parser and shell UI through its build script. Changes to those sources need consideration of both the extension and demo.
+
+Global shell settings retain the shortcut binding independently of its enable toggle (enabled by default). Content scripts check the toggle on each trusted keypress, so existing tabs follow changes. The prompt defaults to `>`; settings save a single line of plain text on blur, preserving invalid or failed edits for correction or retry. Open shell frames follow prompt storage changes. Prompts render as text in the input and command echo; the website demo keeps `>`.
 
 ## Compatibility map
 

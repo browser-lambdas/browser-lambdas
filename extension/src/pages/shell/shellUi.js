@@ -13,6 +13,11 @@ const SHELL_CODE_BG = '#160e16';
 const SHELL_FONT_STACK = "'Fira Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
 window.clearShellUiHistory = () => {};
 let shellThemeReadId = 0;
+async function refreshShellPrompt() {
+    const prompt = typeof getShellPrompt === 'function' ? await getShellPrompt() : '>';
+    const label = document.querySelector(`#${INPUT_WRAP_ID} > span`);
+    if (label) label.textContent = `${prompt} `;
+}
 async function refreshShellTheme() {
     const readId = ++shellThemeReadId;
     try {
@@ -28,7 +33,7 @@ async function refreshShellTheme() {
     } catch (error) {
         if (readId !== shellThemeReadId) return;
         document.getElementById(USER_STYLE_ID)?.remove();
-        console.warn('Could not apply shell style:', error);
+        console.warn('Could not apply terminal style:', error);
     }
 }
 const showShell = async (tabId, useHistory = false) => {
@@ -185,6 +190,10 @@ const showShell = async (tabId, useHistory = false) => {
 	background: ${SHELL_CODE_BG};
 }
 .shell-input-wrap > span {
+	max-width: 50%;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: #ddffd0;
 	margin-right: 1ch;
 	font: inherit;
@@ -192,6 +201,7 @@ const showShell = async (tabId, useHistory = false) => {
 }
 .shell-input {
 	flex: 1;
+	min-width: 0;
 	border: none;
 	outline: none;
 	background: ${SHELL_CODE_BG};
@@ -302,7 +312,7 @@ const showShell = async (tabId, useHistory = false) => {
         const positionButton = document.createElement('button');
         positionButton.type = 'button';
         positionButton.className = 'shell-icon-button';
-        positionButton.setAttribute('aria-label', 'Set shell position');
+        positionButton.setAttribute('aria-label', 'Set terminal position');
         positionButton.setAttribute('data-testid', 'shell-position-button');
         positionButton.innerHTML = getPositionIconSvg();
         controls.appendChild(positionButton);
@@ -341,7 +351,7 @@ const showShell = async (tabId, useHistory = false) => {
         closeButton.type = 'button';
         closeButton.textContent = '×';
         closeButton.className = 'shell-icon-button';
-        closeButton.setAttribute('aria-label', 'Close shell');
+        closeButton.setAttribute('aria-label', 'Close terminal');
         closeButton.style.fontSize = '34px';
         closeButton.addEventListener('click', removeShell);
         closeButton.addEventListener('mousedown', (event) => {
@@ -363,8 +373,8 @@ const showShell = async (tabId, useHistory = false) => {
         inputWrap.dataset.testid = 'shell-input-wrap';
         shellBody.appendChild(inputWrap);
         const promptLabel = document.createElement('span');
-        promptLabel.textContent = '> ';
         inputWrap.appendChild(promptLabel);
+        await refreshShellPrompt();
         const input = document.createElement('input');
         input.type = 'text';
         input.id = INPUT_ID;
@@ -462,7 +472,7 @@ const showShell = async (tabId, useHistory = false) => {
                         return;
                     }
                     let cmdLine = document.createElement('p');
-                    cmdLine.textContent = `> ${typedCmd}`;
+                    cmdLine.textContent = `${promptLabel.textContent}${typedCmd}`;
                     cmdLine.style.margin = '0';
                     cmdLine.style.font = 'inherit';
                     cmdLine.style.lineHeight = 'inherit';

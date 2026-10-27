@@ -194,7 +194,7 @@ test('approved CLI resources execute, rejected updates stay unchanged, and appro
 
 	await page.goto(`chrome-extension://${extensionId}/workspace.html#styles`);
 	await page.getByTestId('sidebar-styles-item').filter({ hasText: 'cli-theme.css' }).dblclick();
-	await page.getByRole('button', { name: 'Set as default shell style', exact: true }).click();
+	await page.getByRole('button', { name: 'Set as default terminal style', exact: true }).click();
 	await expect(runtime.frameLocator('#browser-lambdas-shell').locator('#shell-titlebar')).toHaveCSS('background-color', 'rgb(1, 22, 33)');
 	const installed = await collections(page);
 
@@ -240,6 +240,54 @@ test('approved CLI resources execute, rejected updates stay unchanged, and appro
 	const denied = await runOnPage(runtime, `${localTestPage}/denied`, 'cli-run');
 	await expect(denied.locator('#shell-outputs p').last()).toContainText('does not match any allowed pattern');
 	await expect(runtime.locator('body')).not.toHaveAttribute('data-cli-version');
+});
+
+test('terminal demo imports through review and stays unselected until Set theme', async ({ cli, page, extensionContext, extensionId, localTestPage }) => {
+	const demo = path.resolve('../demos/terminal');
+	fs.rmSync(path.join(cli.dir, 'functions'), { recursive: true, force: true });
+	fs.cpSync(demo, cli.dir, { recursive: true });
+	const files = fs.readdirSync(path.join(demo, 'styles')).filter((name) => name.endsWith('.css')).sort();
+	expect(files).toEqual(['catppuccin.css', 'glass.css', 'zebra.css']);
+
+	const result = await cli.push();
+	expect(result.code, result.stderr).toBe(0);
+	expect(result.stdout).toContain('pending-review');
+	const staged = await collections(page);
+	expect(staged.styles).toEqual([]);
+	expect(staged.pending).toHaveLength(1);
+	expect(staged.pending[0].project).toBe('terminal');
+	expect(staged.pending[0].items.map((item) => [item.type, item.name]).sort()).toEqual(files.map((name) => ['style', name]));
+	await review(page, extensionId, 'Approve');
+	const installed = (await collections(page)).styles;
+	expect(installed.map((style) => style.name).sort()).toEqual(files);
+	for (const style of installed) {
+		expect(style).toMatchObject({ project: 'terminal', selected: false });
+		expect(style.css).toBe(fs.readFileSync(path.join(demo, 'styles', style.name), 'utf8'));
+	}
+
+	await page.goto(`chrome-extension://${extensionId}/settings.html`);
+	const picker = page.locator('[data-terminal-theme-picker]');
+	const currentTheme = picker.locator('.terminal-theme-heading .section-description');
+	await expect(currentTheme).toHaveText('Built-in default');
+	await picker.getByRole('button', { name: 'Preview', exact: true }).click();
+	const mocha = installed.find((style) => style.name === 'catppuccin.css');
+	await picker.getByRole('listbox', { name: 'Preview theme', exact: true }).selectOption(mocha.id);
+	await expect(picker.frameLocator('iframe.terminal-preview').locator('#browser-lambdas-shell')).toHaveCSS('background-color', 'rgb(30, 30, 46)');
+	await expect(currentTheme).toHaveText('Built-in default');
+	expect((await collections(page)).styles.every((style) => !style.selected)).toBe(true);
+
+	await page.getByRole('button', { name: 'Always Show Terminal', exact: true }).click();
+	const runtime = await extensionContext.newPage();
+	await runtime.goto(localTestPage);
+	const terminal = runtime.frameLocator('#browser-lambdas-shell');
+	await expect(terminal.locator('#shell-input')).toBeVisible();
+	await expect(terminal.locator('#browser-lambdas-shell')).toHaveCSS('background-color', 'rgb(22, 14, 22)');
+	await picker.getByRole('button', { name: 'Set theme', exact: true }).click();
+	await expect(currentTheme).toHaveText('terminal / catppuccin.css');
+	await expect(terminal.locator('#browser-lambdas-shell')).toHaveCSS('background-color', 'rgb(30, 30, 46)');
+	expect((await collections(page)).styles.filter((style) => style.selected).map((style) => style.id)).toEqual([mocha.id]);
+	await page.reload();
+	await expect(currentTheme).toHaveText('terminal / catppuccin.css');
 });
 
 test('CLI sync enforces polling, review, and locks atomically while manual approval remains available when polling stops', async ({ cli, page, extensionContext, extensionId, localTestPage }) => {

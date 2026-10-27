@@ -1,0 +1,74 @@
+#browser-lambdas-shell {
+  background: linear-gradient(135deg, #ffffff18, #ffffff03 65%), #152438;
+  color: #eef6ff;
+  border: 1px solid #c7e6ff55;
+  box-shadow: inset 0 1px 0 #ffffff40, inset 0 -1px 0 #97cfff18;
+  color-scheme: dark;
+}
+
+#shell-titlebar {
+  background: linear-gradient(90deg, #c7e6ff18, #ffffff08);
+  border-bottom: 1px solid #c7e6ff30;
+}
+
+#shell-body,
+#shell-outputs,
+#shell-input-wrap,
+#shell-input {
+  background: transparent;
+  color: #eef6ff;
+}
+
+#shell-input-wrap > span {
+  color: #9ee8dd;
+}
+
+#shell-input {
+  caret-color: #b6deff;
+}
+
+#shell-input::placeholder {
+  color: #b0c4d9;
+}
+
+#shell-suggestions,
+#shell-position-menu {
+  background: linear-gradient(135deg, #ffffff12, #ffffff03), #152438;
+  color: #eef6ff;
+  border: 1px solid #c7e6ff55;
+  box-shadow: 0 12px 28px #07101b60, inset 0 1px 0 #ffffff20;
+}
+
+.shell-icon-button {
+  background: transparent;
+  color: #d8eeff;
+}
+
+.shell-position-menu button {
+  color: #eef6ff;
+}
+
+.shell-icon-button:hover,
+.shell-position-menu button:hover,
+.shell-suggestion.active,
+.shell-suggestion:hover {
+  background: #c7e6ff22;
+  color: #fff;
+}
+
+#browser-lambdas-shell ::selection {
+  background: #91caff55;
+  color: #fff;
+}
+
+@supports (backdrop-filter: blur(16px)) {
+  #browser-lambdas-shell {
+    background: linear-gradient(135deg, #ffffff20, #ffffff03 65%), #152438d9;
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+
+  #shell-suggestions,
+  #shell-position-menu {
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+}

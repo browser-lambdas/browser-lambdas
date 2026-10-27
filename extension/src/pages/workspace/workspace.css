@@ -554,6 +554,21 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .item-settings-title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 22px; color: var(--text); }
 .item-settings-title .lucide-icon { width: 22px; height: 22px; flex-shrink: 0; }
 
+.style-form { width: min(100%, 720px); }
+.style-code-box { height: 200px; min-height: 200px; border: 1px solid var(--line); border-radius: 10px; }
+.style-form .style-code-box .code-editor { border: 0; border-radius: 0; min-height: 0; padding: 8px 16px 24px; background: transparent; font: inherit; line-height: inherit; resize: none; color: transparent; }
+.style-theme-settings { display: flex; flex-direction: column; gap: 12px; }
+.style-preview-heading, .style-theme-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.style-preview-heading h3 { margin: 0; font-size: 16px; }
+.style-current-theme { color: var(--green); font-size: 12px; }
+.style-theme-actions .security-help { flex: 1; }
+.style-theme-actions { justify-content: flex-end; }
+.style-set-theme { flex-shrink: 0; border: 1px solid var(--green); border-radius: 7px; padding: 7px 14px; background: var(--green); color: #160e16; font: inherit; font-weight: 600; cursor: pointer; }
+.style-set-theme:disabled { background: var(--panel-soft); border-color: var(--line); color: var(--muted); cursor: default; }
+.style-set-theme:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.editor-maximized .style-code-box { height: 100%; min-height: 0; border: 0; border-radius: 0; }
+.editor-maximized > .style-form > .form-error { display: block; }
+
 .item-button.renaming { height: auto; min-height: 30px; padding-block: 4px; }
 .sidebar-rename { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; width: 100%; }
 .sidebar-rename input { min-width: 0; width: 0; flex: 1; padding: 2px 4px; color: var(--text); background: var(--panel); border: 1px solid var(--muted); border-radius: 3px; font: inherit; }

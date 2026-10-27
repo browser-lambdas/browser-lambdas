@@ -81,11 +81,11 @@ const showShell = async (tabId, useHistory = false) => {
             if (session.id) await chrome.runtime.sendMessage({ type: 'CANCEL_UI_SESSION', surface: 'shell', id: session.id });
             return;
         }
-        if (!registration?.token || !registration.sessionKey) throw new Error('The shell session could not be created.');
+        if (!registration?.token || !registration.sessionKey) throw new Error('The terminal session could not be created.');
         const frame = document.createElement('iframe');
         session.frame = frame;
         frame.id = SHELL_ID;
-        frame.title = 'Browser Lambdas shell';
+        frame.title = 'Browser Lambdas terminal';
         frame.dataset.testid = 'shell';
         Object.assign(frame.style, { position: 'fixed', zIndex: '2147483647', border: '0', borderRadius: '24px', background: '#160e16', colorScheme: 'dark', overflow: 'hidden' });
         const bounds = await getShellPosition(shellPositionScope);
@@ -104,7 +104,7 @@ const showShell = async (tabId, useHistory = false) => {
                 onMessage: (data) => {
                     if (shellFrameSession !== session) return;
                     if (!session.ready) {
-                        if (data?.type !== 'SHELL_READY') throw new Error('The shell did not become ready.');
+                        if (data?.type !== 'SHELL_READY') throw new Error('The terminal did not become ready.');
                         session.ready = true;
                         clearTimeout(session.timeout);
                         return;
@@ -122,13 +122,13 @@ const showShell = async (tabId, useHistory = false) => {
         }, { once: true });
         session.timeout = setTimeout(() => {
             if (shellFrameSession !== session) return;
-            log.err('The shell could not connect. Reopen the terminal to try again.');
+            log.err('The terminal could not connect. Reopen the terminal to try again.');
             removeShell();
         }, 2000);
         document.body.appendChild(frame);
     } catch {
         if (shellFrameSession !== session) return;
-        log.err('The shell could not open. Reopen the terminal to try again.');
+        log.err('The terminal could not open. Reopen the terminal to try again.');
         removeShell();
     }
 };

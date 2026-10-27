@@ -7,6 +7,8 @@ const LOCAL_STORAGE_KEY_SECRETS = 'local_storage_key_secrets';
 const LOCAL_STORAGE_KEY_STORAGE = 'local_storage_key_storage';
 const LOCAL_STORAGE_KEY_INPUT_HISTORY = 'local_storage_key_input_history';
 const LOCAL_STORAGE_KEY_KEYBINDING = 'local_storage_key_keybinding';
+const LOCAL_STORAGE_KEY_KEYBINDING_ENABLED = 'local_storage_key_keybinding_enabled';
+const LOCAL_STORAGE_KEY_SHELL_PROMPT = 'local_storage_key_shell_prompt';
 const LOCAL_STORAGE_KEY_THEME = 'local_storage_key_theme';
 const LOCAL_STORAGE_KEY_SHELLPOSITION = 'local_storage_key_shellposition';
 const LOCAL_STORAGE_KEY_SHELLCSS = 'local_storage_key_shellcss';
@@ -67,6 +69,20 @@ const getKeyBinding = async () => {
 };
 const setKeyBinding = async (binding) => {
     await setChromeLocalStorage(LOCAL_STORAGE_KEY_KEYBINDING, binding);
+};
+const getKeyBindingEnabled = async () => (await getChromeLocalStorage(LOCAL_STORAGE_KEY_KEYBINDING_ENABLED)) !== false;
+const setKeyBindingEnabled = async (enabled) => setChromeLocalStorage(LOCAL_STORAGE_KEY_KEYBINDING_ENABLED, enabled === true);
+const normalizeShellPrompt = (value) => {
+    if (typeof value !== 'string') return null;
+    const prompt = value.trim();
+    if (/[\u0000-\u001f\u007f-\u009f\u2028-\u202e\u2066-\u2069]/u.test(value)) return null;
+    return prompt || '>';
+};
+const getShellPrompt = async () => normalizeShellPrompt(await getChromeLocalStorage(LOCAL_STORAGE_KEY_SHELL_PROMPT)) ?? '>';
+const setShellPrompt = async (value) => {
+    const prompt = normalizeShellPrompt(value);
+    if (prompt === null) throw new Error('Use one line, without control characters.');
+    await setChromeLocalStorage(LOCAL_STORAGE_KEY_SHELL_PROMPT, prompt);
 };
 const getTheme = async () => {
     const theme = await getChromeLocalStorage(LOCAL_STORAGE_KEY_THEME);
