@@ -194,7 +194,7 @@ test('approved CLI resources execute, rejected updates stay unchanged, and appro
 
 	await page.goto(`chrome-extension://${extensionId}/workspace.html#styles`);
 	await page.getByTestId('sidebar-styles-item').filter({ hasText: 'cli-theme.css' }).dblclick();
-	await page.getByRole('button', { name: 'Set as default shell style', exact: true }).click();
+	await page.getByRole('button', { name: 'Set as default terminal style', exact: true }).click();
 	await expect(runtime.frameLocator('#browser-lambdas-shell').locator('#shell-titlebar')).toHaveCSS('background-color', 'rgb(1, 22, 33)');
 	const installed = await collections(page);
 

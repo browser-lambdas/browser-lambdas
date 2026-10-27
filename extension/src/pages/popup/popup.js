@@ -10,7 +10,7 @@ function renderFallback(status, tabId = null) {
   app.innerHTML = `
     <div class="card">
       <a class="row" href="/workspace.html#functions" target="_blank" rel="noopener noreferrer">[ workspace ]</a>
-      <button class="row" id="open-shell">[ open shell ]</button>
+      <button class="row" id="open-shell">[ open terminal ]</button>
       <a class="row" href="${activityHref}" target="_blank" rel="noopener noreferrer">[ activity log ]</a>
       <a class="row" href="/settings.html" target="_blank" rel="noopener noreferrer">[ settings ]</a>
       <p class="small">[ Site status: ${status} ]</p>

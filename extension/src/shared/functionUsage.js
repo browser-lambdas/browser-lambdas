@@ -63,5 +63,5 @@ export function functionUsageExample(item) {
     });
     const name = String(item.name || '').trim() || 'do-something';
     const command = [name.split(/\s+/)[0], ...positional, ...flags].join(' ');
-    return `# invoke in shell\n> ${command}\n\n# tabs\nawait ctx.tabs.this().run(${JSON.stringify(command)});`;
+    return `# invoke in terminal\n> ${command}\n\n# tabs\nawait ctx.tabs.this().run(${JSON.stringify(command)});`;
 }

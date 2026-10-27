@@ -29,7 +29,7 @@ test('shell theme applies custom styles', async ({
 	].join('\n');
 	await editor.fill(css);
 	await page.getByTestId('pane-save').last().click();
-	await page.getByTitle('Set as default shell style').last().click();
+	await page.getByTitle('Set as default terminal style').last().click();
 	await page.waitForTimeout(reactionTime);
 	await page.evaluate(async () => {
 		const key = 'local_storage_key_shellcss';

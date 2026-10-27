@@ -14,6 +14,7 @@ window.getAllowedShellTheme = async () => {
 };
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.local_storage_key_project_settings || changes.local_storage_key_shellcss)) void refreshShellTheme();
+    if (area === 'local' && changes.local_storage_key_shell_prompt) void refreshShellPrompt();
 });
 const sendShellAction = (message) => shellReady && shellChannel.send(message);
 function executeCommand(command) { sendShellAction({ type: 'EXECUTE', command }); }
@@ -28,7 +29,7 @@ window.addEventListener('message', async (event) => {
         purpose: 'shell', role: 'client', timeoutMs: 2000,
         onMessage: async (data) => {
             if (!shellInitialized) {
-                if (data?.type !== 'INIT') throw new Error('The shell did not receive its initialization.');
+                if (data?.type !== 'INIT') throw new Error('The terminal did not receive its initialization.');
                 shellInitialized = true;
                 await showShell(data.tabId, data.useHistory);
                 if (shellFailed) { document.getElementById('browser-lambdas-shell')?.remove(); return; }
@@ -37,7 +38,7 @@ window.addEventListener('message', async (event) => {
                 shellChannel.send({ type: 'SHELL_READY' });
                 return;
             }
-            if (!shellReady) throw new Error('The shell is not ready.');
+            if (!shellReady) throw new Error('The terminal is not ready.');
             if (data?.type === 'SHELL_OUTPUT') renderShellOutput(data.level, data.values);
             else if (data?.type === 'CLEAR_HISTORY') window.clearShellUiHistory?.();
             else if (data?.type === 'FOCUS') document.getElementById('shell-input')?.focus();
@@ -87,7 +88,7 @@ function secureShellUi() {
     }, true);
     document.addEventListener('click', (event) => {
         if (!event.isTrusted || !shellReady) { event.preventDefault(); event.stopImmediatePropagation(); return; }
-        if (event.target.closest('[aria-label="Close shell"]')) { event.stopImmediatePropagation(); sendShellAction({ type: 'CLOSE' }); }
+        if (event.target.closest('[aria-label="Close terminal"]')) { event.stopImmediatePropagation(); sendShellAction({ type: 'CLOSE' }); }
         const button = event.target.closest('#shell-position-menu button');
         if (button) { event.stopImmediatePropagation(); sendShellAction({ type: 'PLACE', placement: button.textContent.replace('Place on ', '') }); }
     }, true);

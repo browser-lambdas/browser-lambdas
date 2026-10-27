@@ -53,3 +53,31 @@ test('change keybinding is persisted and toggles shell', async ({
 });
 
 export default test;
+
+test('disable and re-enable shortcut in existing tabs without losing the binding', async ({ page, extensionId, localTestPage, reactionTime }) => {
+	const site = await page.context().newPage();
+	await site.goto(localTestPage);
+	await page.goto(`chrome-extension://${extensionId}/settings.html`);
+	const toggle = page.locator('#keybinding-settings').getByRole('button', { name: 'Enable key binding', exact: true });
+	const binding = page.locator('#shell-keybinding');
+	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+	await binding.click();
+	await page.keyboard.press('Meta+j');
+	await expect(binding).toHaveValue('Cmd + J');
+	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+	await expect(binding).toBeDisabled();
+	await site.keyboard.press('Meta+j');
+	await expect(site.locator('#browser-lambdas-shell')).toHaveCount(0);
+	await page.reload();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+	await expect(binding).toHaveValue('Cmd + J');
+	await site.reload();
+	await site.waitForTimeout(reactionTime);
+	await site.keyboard.press('Meta+j');
+	await expect(site.locator('#browser-lambdas-shell')).toHaveCount(0);
+	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+	await site.keyboard.press('Meta+j');
+	await expect(site.locator('#browser-lambdas-shell')).toBeVisible();
+});

@@ -10,7 +10,7 @@ test('always show shell persists and auto-opens shell', async ({
 }) => {
 	const base = `chrome-extension://${extensionId}`;
 
-	// enable Always Show Shell and verify persistence
+	// enable Always Show Terminal and verify persistence
 	await page.goto(`${base}/settings.html`);
 	await page.waitForTimeout(reactionTime);
 	await page.evaluate(
@@ -22,7 +22,7 @@ test('always show shell persists and auto-opens shell', async ({
 	await page.reload();
 	await page.waitForTimeout(reactionTime);
 
-	const alwaysToggle = page.getByText('Always Show Shell').locator('..').getByRole('button');
+	const alwaysToggle = page.getByText('Always Show Terminal').locator('..').getByRole('button');
 	await expect(alwaysToggle).toHaveAttribute('data-state', 'off');
 	await alwaysToggle.click({ force: true });
 	await page.waitForTimeout(reactionTime);
@@ -49,9 +49,9 @@ test('always show shell persists and auto-opens shell', async ({
 
 	await tab.close();
 
-	// disable Always Show Shell
+	// disable Always Show Terminal
 	await page.bringToFront();
-	const alwaysToggleOff = page.getByText('Always Show Shell').locator('..').getByRole('button');
+	const alwaysToggleOff = page.getByText('Always Show Terminal').locator('..').getByRole('button');
 	await alwaysToggleOff.click();
 	await expect(alwaysToggleOff).toHaveAttribute('data-state', 'off');
 	await expect

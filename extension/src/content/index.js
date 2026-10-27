@@ -4,7 +4,7 @@ chrome.runtime.sendMessage({ type: 'GET_TAB_ID' }, async (response) => {
         return;
     const sticky = await getStickyShell();
     const alwaysOn = await getShellAlwaysOn();
-    // Always register keybinding so user can open manually
+    // Keep the listener so changes also apply to tabs that are already open.
     registerKeyBinding(tabId, sticky);
     if (alwaysOn) {
         showShell(tabId, sticky);

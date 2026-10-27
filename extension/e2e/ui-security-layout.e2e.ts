@@ -190,7 +190,7 @@ test('function usage updates with code and name edits', async ({ page, extension
 	await page.getByLabel('Code', { exact: true }).fill('const { 0: first, 1: second } = ctx.args.all();');
 	await page.getByTestId('pane-settings').click();
 	const usage = page.locator('[data-function-usage]');
-	await expect(usage).toHaveValue('# invoke in shell\n> do-something pos1 pos2\n\n# tabs\nawait ctx.tabs.this().run("do-something pos1 pos2");');
+	await expect(usage).toHaveValue('# invoke in terminal\n> do-something pos1 pos2\n\n# tabs\nawait ctx.tabs.this().run("do-something pos1 pos2");');
 	await page.getByTestId('pane-title').fill('renamed');
 	await expect(usage).toHaveValue(/> renamed pos1 pos2/);
 });

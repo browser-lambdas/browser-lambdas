@@ -1,0 +1,63 @@
+import { test, expect } from './fixtures';
+
+test('custom prompt updates open terminals, persists, echoes as text, and resets', async ({ page, extensionId, localTestPage, reactionTime }) => {
+	const site = await page.context().newPage();
+	await site.goto(localTestPage);
+	await site.waitForTimeout(reactionTime);
+	await site.keyboard.press('Meta+k');
+	const shell = site.frameLocator('#browser-lambdas-shell');
+	const label = shell.locator('#shell-input-wrap > span');
+	await expect(label).toHaveText('>');
+	await page.goto(`chrome-extension://${extensionId}/settings.html`);
+	const prompt = page.getByLabel('Prompt', { exact: true });
+	await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+	await expect(prompt).toHaveValue('>');
+	const marker = `🐑 ${'long-marker-'.repeat(8)} <b> & " >`;
+	await prompt.fill(marker);
+	const history = page.getByRole('button', { name: 'Keep Output History', exact: true });
+	await history.click();
+	await expect(history).toHaveAttribute('aria-pressed', 'true');
+	await expect(label).toHaveText(marker);
+	await expect(label.locator('b')).toHaveCount(0);
+	await shell.locator('#shell-input').fill('unknown-prompt-test');
+	await shell.locator('#shell-input').press('Enter');
+	await expect(shell.locator('#shell-outputs')).toContainText(`${marker} unknown-prompt-test`);
+	await page.reload();
+	await expect(prompt).toHaveValue(marker);
+	await site.reload();
+	await site.waitForTimeout(reactionTime);
+	await site.keyboard.press('Meta+k');
+	await expect(label).toHaveText(marker);
+	await prompt.fill('');
+	await prompt.press('Tab');
+	await expect(prompt).toHaveValue('>');
+	await expect(label).toHaveText('>');
+});
+
+test('invalid prompts and failed saves preserve the edit and saved prompt', async ({ page, extensionId }) => {
+	await page.goto(`chrome-extension://${extensionId}/settings.html`);
+	const prompt = page.getByLabel('Prompt', { exact: true });
+	await expect(prompt).toHaveValue('>');
+	await prompt.fill('hidden\u202e >');
+	await prompt.press('Tab');
+	await expect(page.locator('#shell-prompt-notice')).toContainText('without control characters');
+	await expect(prompt).toHaveValue('hidden\u202e >');
+	await page.evaluate(() => chrome.storage.local.set({ local_storage_key_shell_prompt: { invalid: true } }));
+	await page.reload();
+	await expect(prompt).toHaveValue('>');
+	await prompt.fill('personal >');
+	await page.evaluate(() => {
+		const original = chrome.storage.local.set;
+		chrome.storage.local.set = async () => { throw new Error('Simulated storage failure'); };
+		window.addEventListener('restore-storage', () => { chrome.storage.local.set = original; }, { once: true });
+	});
+	await prompt.press('Tab');
+	await expect(page.locator('#shell-prompt-notice')).toContainText('Unable to save');
+	await expect(prompt).toHaveValue('personal >');
+	await page.evaluate(() => window.dispatchEvent(new Event('restore-storage')));
+	await prompt.focus();
+	await prompt.press('Tab');
+	await expect(page.locator('#shell-prompt-notice')).toBeHidden();
+	await page.reload();
+	await expect(prompt).toHaveValue('personal >');
+});
