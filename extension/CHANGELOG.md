@@ -1,3 +1,7 @@
+## 0.3.0
+
+- Add settings to control prompt marker and enable/disable key binding
+
 ### 0.2.1
 
 - Embed menu in iframe
