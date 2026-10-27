@@ -159,10 +159,26 @@ test("connection commands persist, update, list and remove credentials without e
       assert.equal(help.status, 0);
       assert.match(help.stdout, /Save a named connection/);
       assert.match(help.stdout, /baah push <name>/);
+      assert.match(help.stdout, /baah info <name>/);
       assert.equal(help.stderr, "");
     }
-    assert.match(listed.stdout, /chrome \(port 3333\)/);
-    assert.ok(listed.stdout.indexOf("chrome") < listed.stdout.indexOf("work"));
+    assert.equal(listed.stdout, " • __proto__\n • chrome\n • work\n");
+    for (const [name, port] of [["chrome", 3333], ["work", 4455], ["__proto__", 4455]]) {
+      const info = run("info", name);
+      assert.equal(info.status, 0, info.stderr);
+      assert.equal(info.stdout, `Push listener: ws://127.0.0.1:${port}\n`);
+      assert.ok(!/test-secret|replacement/.test(info.stdout + info.stderr));
+    }
+    const missing = run("info", "missing");
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /Connection 'missing' not found\. Run baah set missing first\./);
+    assert.equal(missing.stdout, "");
+    assert.notEqual(run("info", "toString").status, 0);
+    for (const args of [["info"], ["info", "--help"], ["info", "chrome", "extra"]]) {
+      const result = run(...args);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /Usage: baah info <name>/);
+    }
     for (const args of [["set"], ["rm"], ["ls", "extra"], ["unknown"], ["init", "extra"], ["push", "chrome", "extra"], ["set", "chrome", "--token"], ["set", "chrome", "--token", ""], ["set", "chrome"]]) {
       assert.notEqual(run(...args).status, 0, args.join(" "));
       assert.equal(read().chrome.token, "replacement");
@@ -181,11 +197,41 @@ test("connection commands persist, update, list and remove credentials without e
     assert.equal(read().edge.port, 65535);
     fs.writeFileSync(path.join(dir, "baah.toml"), "not valid toml [");
     assert.equal(run("ls").status, 0);
+    assert.equal(run("info", "chrome").status, 0);
     assert.equal(run("set", "edge", "--port", "1").status, 0);
     assert.match(run("rm", "chrome").stdout, /Removed connection/);
     assert.equal(read().chrome, undefined);
     assert.deepEqual(read().work, { token: "test-secret", port: 4455 });
     assert.match(run("rm", "chrome").stdout, /not found/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("connection listings and details report invalid stores without exposing tokens or changing data", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baah-connection-info-"));
+  const run = (...args) => spawnSync(process.execPath, [fileURLToPath(new URL("./baah.js", import.meta.url)), ...args], {
+    cwd: dir, env: { ...process.env, ...isolatedHome(dir) }, encoding: "utf8",
+  });
+  try {
+    const missing = run("info", "chrome");
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /Connection 'chrome' not found/);
+    const file = connectionPath(dir);
+    for (const [content, error] of [
+      ['{"chrome":{"token":"private-token"', /Unable to read connection store/],
+      [JSON.stringify({ chrome: { token: "private-token", port: 0 } }), /Invalid connection store/],
+    ]) {
+      fs.writeFileSync(file, content);
+      for (const args of [["ls"], ["info", "chrome"]]) {
+        const result = run(...args);
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, error);
+        assert.equal(result.stdout, "");
+        assert.ok(!result.stderr.includes("private-token"));
+        assert.equal(fs.readFileSync(file, "utf8"), content);
+      }
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
