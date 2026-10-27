@@ -1,4 +1,7 @@
+import { createTerminalThemePicker } from './terminalThemes.js';
+
 const app = document.getElementById('app');
+const terminalThemePicker = createTerminalThemePicker();
 let cleanupBaahSync = null;
 
 const settingKeys = [
@@ -109,6 +112,7 @@ function renderSettings() {
           </div>
           ${button('Clear', 'clear-history', { icon: lucideIcon('trash') })}
         </div>
+        <div data-terminal-theme-picker></div>
       </section>
 
       <section class="settings-section" aria-labelledby="baah-cli-settings">
@@ -155,6 +159,7 @@ function renderSettings() {
 function render() {
   const scrollTop = document.querySelector('.settings-scroll')?.scrollTop || 0;
   app.innerHTML = `<div class="settings-shell">${renderAppNav({ settingsActive: true })}${renderSettings()}</div>`;
+  terminalThemePicker.mount(app.querySelector('[data-terminal-theme-picker]'));
   document.querySelector('.settings-scroll')?.scrollTo({ top: scrollTop });
 }
 
@@ -387,6 +392,7 @@ window.addEventListener('keydown', async (event) => {
 window.addEventListener('beforeunload', () => cleanupBaahSync?.());
 
 chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area === 'local' && [LOCAL_STORAGE_KEY_SHELLCSS, LOCAL_STORAGE_KEY_SHELL_PROMPT, 'local_storage_key_project_settings'].some((key) => Object.hasOwn(changes, key))) void terminalThemePicker.refresh();
   if (area === 'local' && changes[LOCAL_STORAGE_KEY_SHELL_PROMPT]) {
     const prompt = await getShellPrompt();
     if (!state.shellPromptDirty) state.shellPrompt = prompt;

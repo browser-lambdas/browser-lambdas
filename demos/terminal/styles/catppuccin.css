@@ -1,0 +1,62 @@
+/* Catppuccin Mocha palette: https://github.com/catppuccin/catppuccin#-palette */
+#browser-lambdas-shell {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border: 1px solid #585b70;
+  color-scheme: dark;
+}
+
+#shell-titlebar {
+  background: #181825;
+  border-bottom: 1px solid #313244;
+}
+
+#shell-body,
+#shell-outputs,
+#shell-input-wrap,
+#shell-input {
+  background: #1e1e2e;
+  color: #cdd6f4;
+}
+
+#shell-input-wrap > span {
+  color: #a6e3a1;
+}
+
+#shell-input {
+  caret-color: #f5e0dc;
+}
+
+#shell-input::placeholder {
+  color: #9399b2;
+}
+
+#shell-suggestions,
+#shell-position-menu {
+  background: #181825;
+  color: #cdd6f4;
+  border: 1px solid #585b70;
+  box-shadow: 0 8px 24px #11111b80;
+}
+
+.shell-icon-button {
+  background: transparent;
+  color: #b4befe;
+}
+
+.shell-position-menu button {
+  color: #cdd6f4;
+}
+
+.shell-icon-button:hover,
+.shell-position-menu button:hover,
+.shell-suggestion.active,
+.shell-suggestion:hover {
+  background: #313244;
+  color: #cba6f7;
+}
+
+#browser-lambdas-shell ::selection {
+  background: #45475a;
+  color: #cdd6f4;
+}

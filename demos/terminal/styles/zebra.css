@@ -1,0 +1,71 @@
+#browser-lambdas-shell {
+  background: #fafafa;
+  color: #171717;
+  border: 1px solid #171717;
+  color-scheme: light;
+}
+
+#shell-titlebar {
+  background: repeating-linear-gradient(125deg, #171717 0 14px, #fafafa 14px 28px);
+  border-bottom: 1px solid #171717;
+}
+
+#shell-body,
+#shell-outputs,
+#shell-input-wrap,
+#shell-input {
+  background: #fafafa;
+  color: #171717;
+}
+
+#shell-outputs p:nth-child(odd) {
+  background: #e8e8e8;
+}
+
+#shell-outputs p:nth-child(even) {
+  background: #fafafa;
+}
+
+#shell-input-wrap > span {
+  color: #171717;
+  font-weight: 700;
+}
+
+#shell-input {
+  caret-color: #171717;
+}
+
+#shell-input::placeholder {
+  color: #666;
+}
+
+#shell-suggestions,
+#shell-position-menu {
+  background: #fafafa;
+  color: #171717;
+  border: 1px solid #171717;
+  box-shadow: 0 8px 20px #0002;
+}
+
+.shell-icon-button {
+  background: #fafafa;
+  color: #171717;
+  border: 1px solid #171717;
+}
+
+.shell-position-menu button {
+  color: #171717;
+}
+
+.shell-icon-button:hover,
+.shell-position-menu button:hover,
+.shell-suggestion.active,
+.shell-suggestion:hover {
+  background: #171717;
+  color: #fafafa;
+}
+
+#browser-lambdas-shell ::selection {
+  background: #171717;
+  color: #fafafa;
+}

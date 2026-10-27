@@ -12,6 +12,7 @@ import { mountProjectSettings, updateProjectSettingsGlobals } from './projectSet
 import { renderCallerRestrictions, handleCallerRestrictionsEvent } from './callerRestrictions.js';
 import { PROJECT_SETTINGS_KEY, getProjectSettings, normalizeProjectSettings, getProjectCategorySettings } from '../../shared/projectPolicy.js';
 import { settingSource } from '../shared/settingSource.js';
+import { mountTerminalPreview } from '../shared/terminalPreview.js';
 
 const VALID_TABS = ['functions', 'storage', 'triggers', 'secrets', 'styles', 'activity'];
 const PANE_TYPE_BY_TAB = {
@@ -35,6 +36,7 @@ const SECTION_META = {
 const app = document.getElementById('app');
 let cleanupBaahSync = null;
 let categoryHoverTimer = null;
+let stylePreviewTimer = null;
 
 const state = {
   tab: 'functions',
@@ -43,6 +45,7 @@ const state = {
   triggers: [],
   secrets: [],
   styles: [],
+  shellPrompt: '>',
   activityLogs: [],
   openTabs: [],
   activityLevels: new Set(['debug', 'error', 'info']),
@@ -132,7 +135,7 @@ function createPane(type, item) {
   return {
     type: 'pane',
     id: `pane-${state.paneCount++}`,
-    pane: { type, item, expandedEditor: ['lambda', 'storage', 'secret', 'trigger'].includes(type), editable: type === 'storage' ? accessPolicy.normalizeStorageItem(clone(item)) : ['lambda', 'trigger'].includes(type) ? { ...clone(item), ...draftAccessPolicy(type, item) } : clone(item), changed: false }
+    pane: { type, item, expandedEditor: ['lambda', 'storage', 'secret', 'trigger', 'style'].includes(type), editable: type === 'storage' ? accessPolicy.normalizeStorageItem(clone(item)) : ['lambda', 'trigger'].includes(type) ? { ...clone(item), ...draftAccessPolicy(type, item) } : clone(item), changed: false }
   };
 }
 
@@ -178,6 +181,11 @@ function syncPanes(node, type, updated) {
   if (!node) return;
   if (node.type === 'pane') {
     if (node.pane.type === type && node.pane.item.id === updated.id) {
+      if (type === 'style' && node.pane.changed && !sameStorageRecord(node.pane.editable, updated)) {
+        node.pane.item = { ...node.pane.item, selected: updated.selected };
+        node.pane.editable.selected = updated.selected;
+        return;
+      }
       if (['lambda', 'trigger', 'project-settings'].includes(type) && node.pane.changed && !sameStorageRecord(node.pane.editable, updated)) return;
       node.pane.item = updated;
       node.pane.editable = ['lambda', 'trigger'].includes(type) ? { ...clone(updated), ...draftAccessPolicy(type, updated) } : clone(updated);
@@ -348,18 +356,35 @@ function renderPreservingFocus() {
   for (const [id, top] of scroll) app.querySelector(`.pane-content[data-pane-id="${id}"]`)?.scrollTo(0, top);
 }
 
-async function setDefaultStyle(id) {
+async function setDefaultStyle(id, select) {
   const node = findPane(state.root, id);
-  if (!node || node.pane.type !== 'style') return;
-  const shouldSelect = !node.pane.editable.selected;
-  node.pane.editable.selected = shouldSelect;
-  node.pane.changed = true;
-  state.styles = state.styles.map((style) => {
-    if (style.id === node.pane.editable.id) return clone(node.pane.editable);
-    return { ...style, selected: false };
-  });
-  await storeShellThemes(state.styles);
-  state.styles.forEach((style) => syncPanes(state.root, 'style', style));
+  if (!node || node.pane.type !== 'style' || node.pane.savingTheme) return;
+  const draft = clone(node.pane.editable);
+  node.pane.savingTheme = true;
+  node.pane.error = '';
+  renderPreservingFocus();
+  try {
+    const styles = await getShellThemes();
+    const current = styles.find((style) => style.id === draft.id);
+    if (!current) throw new Error('This style is no longer available. Reopen it from the sidebar.');
+    if (!sameStorageRecord({ ...current, selected: false }, { ...node.pane.item, selected: false })) {
+      throw new Error('This style changed elsewhere. Your edit is kept; reopen it before setting the theme.');
+    }
+    const shouldSelect = select ?? !current.selected;
+    if (shouldSelect && !getProjectCategorySettings(await getProjectSettings(), draft.project, 'styles').enabled) {
+      throw new Error('Styles are disabled for this project. Enable them in project settings before setting this theme.');
+    }
+    const nextStyle = { ...draft, selected: shouldSelect };
+    const nextStyles = styles.map((style) => style.id === draft.id ? nextStyle : { ...style, selected: false });
+    await storeShellThemes(nextStyles);
+    state.styles = nextStyles;
+    if (sameStorageRecord(node.pane.editable, draft)) node.pane.changed = false;
+    nextStyles.forEach((style) => syncPanes(state.root, 'style', style));
+  } catch (error) {
+    node.pane.error = error.message || 'The theme could not be set. Your edit is kept; try again.';
+  } finally {
+    node.pane.savingTheme = false;
+  }
   render();
 }
 
@@ -741,7 +766,20 @@ function editorFor(node) {
   }
   if (type === 'storage' || type === 'secret') return renderKeyValueForm(node);
   if (type === 'style') {
-    return `${renderLockedBanner(node)}<div class="code-shell"><div class="line-numbers" aria-hidden="true">${codeLineNumbers(editable.css)}</div><div class="code-editor-stack"><pre class="code-highlight" aria-hidden="true">${highlightJavaScript(editable.css)}</pre><textarea class="code-editor" spellcheck="false" data-pane-id="${node.id}" data-field="css" placeholder="Type CSS here...">${escapeHtml(editable.css)}</textarea></div></div>`;
+    const enabled = getProjectCategorySettings(state.projectSettings, editable.project, 'styles').enabled;
+    const selected = state.styles.some((style) => style.id === editable.id && style.selected);
+    return `${renderLockedBanner(node)}<div class="form-pane style-form">
+      ${itemSettingsTitle(node)}
+      ${node.pane.error ? `<p class="form-error" role="alert">${escapeHtml(node.pane.error)}</p>` : ''}
+      <div class="form-field expandable-field"><div class="code-shell style-code-box"><div class="line-numbers" aria-hidden="true">${codeLineNumbers(editable.css)}</div><div class="code-editor-stack"><pre class="code-highlight" aria-hidden="true">${highlightJavaScript(editable.css)}</pre><textarea aria-label="CSS" class="code-editor" spellcheck="false" data-pane-id="${node.id}" data-field="css" placeholder="Type CSS here...">${escapeHtml(editable.css)}</textarea></div></div></div>
+      <section class="style-theme-settings" aria-label="Terminal style preview">
+        <div class="style-preview-heading"><h3>Preview</h3>${selected ? '<span class="style-current-theme">Current theme</span>' : ''}</div>
+        <p class="security-help">Click set theme to enable this globally</p>
+        <div data-terminal-preview="${node.id}"></div>
+        ${!enabled ? `<p class="security-help">Styles are disabled for this project. Preview is still available. Enable styles in ${projectSettingLink(editable, 'styles', 'enabled')} to use this theme.</p>` : ''}
+        <div class="style-theme-actions"><span class="security-help" data-style-theme-note="${node.id}" ${node.pane.changed ? '' : 'hidden'}>${node.pane.changed ? 'Previewing unsaved changes. Setting the theme also saves this style.' : ''}</span><button type="button" class="style-set-theme" data-action="set-style-theme" data-pane-id="${node.id}" ${!enabled || node.pane.savingTheme || (selected && !node.pane.changed) ? 'disabled' : ''}>${node.pane.savingTheme ? 'Setting…' : 'Set theme'}</button></div>
+      </section>
+    </div>`;
   }
   return `${renderLockedBanner(node)}<div class="form-pane trigger-form">
     ${itemSettingsTitle(node)}
@@ -780,14 +818,14 @@ function renderNode(node, isFirst = false, path = []) {
   }
   const activeChrome = shouldShowActivePaneChrome(node);
   return `<section class="pane-frame ${activeChrome ? 'active' : ''} ${isFirst ? 'first' : ''}" data-action="activate-pane" data-pane-id="${node.id}" data-testid="pane">
-    <div class="pane-content ${node.pane.expandedEditor ? (['lambda', 'storage'].includes(node.pane.type) ? 'editor-maximized' : 'security-hidden') : ''} ${activeChrome ? 'active' : ''}" data-testid="pane-content" data-pane-id="${node.id}" data-pane-type="${node.pane.type}">${editorFor(node)}</div>
+    <div class="pane-content ${node.pane.expandedEditor ? (['lambda', 'storage', 'style'].includes(node.pane.type) ? 'editor-maximized' : 'security-hidden') : ''} ${activeChrome ? 'active' : ''}" data-testid="pane-content" data-pane-id="${node.id}" data-pane-type="${node.pane.type}">${editorFor(node)}</div>
     <footer class="pane-footer ${activeChrome ? 'active' : ''}">
       <div class="pane-identity"><span data-testid="pane-category-icon">${lucideIcon(node.pane.type === 'project-settings' ? 'settings' : node.pane.type === 'review' ? 'refreshCw' : APP_CATEGORY_ICONS[tabForType(node.pane.type)])}</span>${paneTitle(node)}</div>
       <div class="pane-actions">
-        ${['lambda', 'storage', 'secret', 'trigger'].includes(node.pane.type) ? paneSettingsButton(node) : ''}
+        ${['lambda', 'storage', 'secret', 'trigger', 'style'].includes(node.pane.type) ? paneSettingsButton(node) : ''}
         <button class="icon-button" data-action="split-pane" data-pane-id="${node.id}" data-dir="horizontal" title="Split right" aria-label="Split right">${lucideIcon('splitHorizontal')}</button>
         <button class="icon-button" data-action="split-pane" data-pane-id="${node.id}" data-dir="vertical" title="Split down" aria-label="Split down">${lucideIcon('splitVertical')}</button>
-        ${node.pane.type === 'style' ? `<button class="icon-button" data-action="set-default-style" data-pane-id="${node.id}" title="${node.pane.editable.selected ? 'Unset default terminal style' : 'Set as default terminal style'}" aria-label="${node.pane.editable.selected ? 'Unset default terminal style' : 'Set as default terminal style'}">${lucideIcon('star')}</button>` : ''}
+        ${node.pane.type === 'style' ? `<button class="icon-button" data-action="set-default-style" data-pane-id="${node.id}" title="${state.styles.some((style) => style.id === node.pane.editable.id && style.selected) ? 'Unset default terminal style' : 'Set as default terminal style'}" aria-label="${state.styles.some((style) => style.id === node.pane.editable.id && style.selected) ? 'Unset default terminal style' : 'Set as default terminal style'}" ${node.pane.savingTheme ? 'disabled' : ''}>${lucideIcon('star')}</button>` : ''}
         ${['review', 'activity', 'project-settings'].includes(node.pane.type) ? '' : `<button class="icon-button" data-action="save-pane" data-testid="pane-save" data-pane-id="${node.id}" title="Save" aria-label="Save">${lucideIcon('save')}</button><button class="icon-button" data-action="delete-pane" data-testid="pane-delete" data-pane-id="${node.id}" title="Delete" aria-label="Delete">${lucideIcon('trash')}</button>`}
         <button class="icon-button" data-action="close-pane" data-pane-id="${node.id}" title="Close" aria-label="Close">${lucideIcon('x')}</button>
       </div>
@@ -810,6 +848,24 @@ function render() {
       baahPollChanges: state.baahPollChanges,
       baahRequireReview: state.baahRequireReview
     } });
+  });
+  refreshStylePreviews();
+}
+
+function refreshStylePreviews() {
+  clearTimeout(stylePreviewTimer);
+  app.querySelectorAll('[data-terminal-preview]').forEach((container) => {
+    const node = findPane(state.root, container.dataset.terminalPreview);
+    if (!node || node.pane.expandedEditor) return;
+    mountTerminalPreview(container, { css: node.pane.editable.css, prompt: state.shellPrompt, name: node.pane.editable.name });
+    const selected = state.styles.some((style) => style.id === node.pane.editable.id && style.selected);
+    const button = app.querySelector(`[data-action="set-style-theme"][data-pane-id="${node.id}"]`);
+    if (button) button.disabled = !getProjectCategorySettings(state.projectSettings, node.pane.editable.project, 'styles').enabled || node.pane.savingTheme || (selected && !node.pane.changed);
+    const note = app.querySelector(`[data-style-theme-note="${node.id}"]`);
+    if (note) {
+      note.textContent = node.pane.changed ? 'Previewing unsaved changes. Setting the theme also saves this style.' : '';
+      note.hidden = !node.pane.changed;
+    }
   });
 }
 
@@ -1120,7 +1176,7 @@ app.addEventListener('click', async (event) => {
   }
   if (action === 'toggle-editor-size') {
     const node = findPane(state.root, target.dataset.paneId);
-    if (node && ['lambda', 'storage', 'secret', 'trigger'].includes(node.pane.type)) {
+    if (node && ['lambda', 'storage', 'secret', 'trigger', 'style'].includes(node.pane.type)) {
       node.pane.expandedEditor = !node.pane.expandedEditor;
       renderPreservingFocus();
     }
@@ -1136,6 +1192,7 @@ app.addEventListener('click', async (event) => {
     updateActivePaneClasses();
   }
   if (action === 'set-default-style') await setDefaultStyle(target.dataset.paneId);
+  if (action === 'set-style-theme') await setDefaultStyle(target.dataset.paneId, true);
   if (action === 'save-pane') await savePane(target.dataset.paneId);
   if (action === 'delete-pane') await deletePane(target.dataset.paneId);
   if (action === 'close-pane') closePane(target.dataset.paneId);
@@ -1206,6 +1263,10 @@ app.addEventListener('input', (event) => {
   }
   if (target.dataset.paneId && target.dataset.field) {
     updateEditable(target.dataset.paneId, target.dataset.field, target.value);
+    if (['css', 'name'].includes(target.dataset.field) && findPane(state.root, target.dataset.paneId)?.pane.type === 'style') {
+      clearTimeout(stylePreviewTimer);
+      stylePreviewTimer = setTimeout(refreshStylePreviews, 150);
+    }
     if (target.dataset.field === 'world') renderPreservingFocus();
     if (target.dataset.field === 'value' && target.classList.contains('secret-value')) {
       state.revealedSecretPanes.delete(target.dataset.paneId);
@@ -1276,6 +1337,7 @@ window.addEventListener('hashchange', () => {
   state.allowMainWorldStorage = await getAllowMainWorldStorage();
   state.allowMainWorldFunctions = await getAllowMainWorldFunctions();
   state.styles = await getShellThemes();
+  state.shellPrompt = await getShellPrompt().catch(() => '>');
   try { state.projectSettings = await getProjectSettings(); }
   catch { state.notice = 'Project settings could not be loaded. Existing settings were preserved.'; }
   state.pendingBatches = await getBaahPendingBatches();
@@ -1291,6 +1353,10 @@ window.addEventListener('hashchange', () => {
 })();
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[LOCAL_STORAGE_KEY_SHELL_PROMPT]) {
+    state.shellPrompt = normalizeShellPrompt(changes[LOCAL_STORAGE_KEY_SHELL_PROMPT].newValue) ?? '>';
+    refreshStylePreviews();
+  }
   if (area === 'local' && changes[PROJECT_SETTINGS_KEY]) {
     try {
       state.projectSettings = normalizeProjectSettings(changes[PROJECT_SETTINGS_KEY].newValue ?? {});
