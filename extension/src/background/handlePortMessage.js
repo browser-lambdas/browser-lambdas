@@ -2,6 +2,7 @@ import { appendActivityLog, log } from './activityLog.js';
 import { handleItemAccess } from './itemAccess.js';
 import { executeLambda } from './executeLambda.js';
 import { verifiedInvocation, finishInvocation, clearTabInvocations } from './invocations.js';
+import { handleNetworkRequest } from './network.js';
 async function waitUntilTabReady(tabId, timeout) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
@@ -26,6 +27,11 @@ export function handlePortMessage(port, tabId, portMapByTabId, requestToPortMap)
         }
         log.dbg(`Port message received: type=${msg.type || 'unknown'}, tabId=${tabId ?? 'none'}, requestId=${msg.id || msg.requestId || 'none'}.`);
         switch (msg.type) {
+            case 'NETWORK_REQUEST': {
+                const response = await handleNetworkRequest(msg, tabId);
+                try { port.postMessage(response); } catch { /* Navigation can close the invoking port. */ }
+                break;
+            }
             case 'GET_SECRET_REQUEST':
             case 'GET_STORAGE_REQUEST':
             case 'SET_STORAGE_REQUEST': {

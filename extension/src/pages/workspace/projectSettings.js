@@ -26,7 +26,7 @@ export function mountProjectSettings(container, { project, view, settings, globa
 
   function defaults() {
     return {
-      mode: 'USER_SCRIPT', enabled: true, userWorld: true, mainWorld: mainAllowed(),
+      mode: 'USER_SCRIPT', enabled: true, userWorld: true, mainWorld: mainAllowed(), allowNetwork: false,
       restrictUrls: false, urlPatterns: '', poll: globals.baahPollChanges !== false,
       review: globals.baahRequireReview !== false, lock: false
     };
@@ -37,7 +37,7 @@ export function mountProjectSettings(container, { project, view, settings, globa
   }
 
   function globalSettingLink(key) {
-    const section = { mainWorld: 'main-world-functions', poll: 'baah-poll', review: 'baah-review' }[key];
+    const section = { mainWorld: 'main-world-functions', poll: 'baah-poll', review: 'baah-review', allowNetwork: 'network-access' }[key];
     return section ? `<a href="settings.html#${section}" target="_blank" rel="noopener">global settings</a>` : '';
   }
 
@@ -47,7 +47,7 @@ export function mountProjectSettings(container, { project, view, settings, globa
   }
 
   function blocked(key) {
-    return ((key === 'mainWorld' && !mainAllowed()) || (key === 'review' && globals.baahRequireReview !== false) || (key === 'poll' && globals.baahPollChanges === false));
+    return ((key === 'allowNetwork' && globals.allowNetwork !== true) || (key === 'mainWorld' && !mainAllowed()) || (key === 'review' && globals.baahRequireReview !== false) || (key === 'poll' && globals.baahPollChanges === false));
   }
 
   function row(key, label, description = '', select = false) {
@@ -68,6 +68,7 @@ export function mountProjectSettings(container, { project, view, settings, globa
       <section class="project-settings-group" aria-labelledby="${prefix}-execution"><h3 id="${prefix}-execution">Execution</h3><div class="project-settings-section">
         ${selected === 'functions' ? '' : row('enabled', enabledLabel, enabledDescription)}
         ${selected === 'functions' ? row('userWorld', 'Enable function execution in user world', 'Allow functions in this project to run in a JavaScript context isolated from the target page’s own JavaScript. This barrier helps protect storage items and secrets from page scripts.') + row('mainWorld', 'Enable function execution in main world', 'Allow functions in this project to run in the target page’s own JavaScript context. This carries additional risk because page scripts can interfere with execution and access exposed data.') : ''}
+        ${selected === 'functions' ? row('allowNetwork', 'Network rules', 'Allow functions to redirect or block tab traffic and change headers.') : ''}
         ${selected === 'styles' ? '' : `${row('restrictUrls', 'Only allow execution on specific URLs', `Filter which paths ${selected} in this project can run on.`)}
         <div class="project-settings-urls" hidden><label for="${prefix}-urlPatterns">Allowed URLs</label><textarea id="${prefix}-urlPatterns" data-setting="urlPatterns" data-testid="project-settings-urlPatterns" rows="4" spellcheck="false" placeholder="https://*.example.com/*" aria-describedby="${prefix}-url-help"></textarea><p id="${prefix}-url-help">One glob or /regular expression/ per line. An empty list blocks execution on all URLs.</p><div class="project-settings-source"><span data-source="urlPatterns"></span></div></div>
         `}
@@ -92,7 +93,8 @@ export function mountProjectSettings(container, { project, view, settings, globa
       const link = globalSettingLink(key);
       source.innerHTML = settingSource({ value: value(key),
         controlled: blocked(key) ? link : '',
-        warning: key === 'mainWorld' && blocked(key) ? `Main world execution is disabled in ${link}`
+        warning: key === 'allowNetwork' && blocked(key) ? `Network rules are disabled in ${link}`
+          : key === 'mainWorld' && blocked(key) ? `Main world execution is disabled in ${link}`
           : key === 'review' && blocked(key) ? `Required by ${link}`
           : key === 'poll' && blocked(key) ? `Polling is disabled by ${link}` : '' });
       source.parentElement.hidden = !source.innerHTML;
@@ -129,7 +131,10 @@ export function mountProjectSettings(container, { project, view, settings, globa
   panel.addEventListener('input', (event) => {
     const control = event.target.closest('[data-setting]');
     if (!control || control.disabled) return;
-    state().values[control.dataset.setting] = control.type === 'checkbox' ? control.checked : control.value;
+    if (control.dataset.setting === 'allowNetwork') {
+      if (!event.isTrusted) return;
+      state().values.allowNetwork = control.checked;
+    } else state().values[control.dataset.setting] = control.type === 'checkbox' ? control.checked : control.value;
     onChange();
     refresh();
   });

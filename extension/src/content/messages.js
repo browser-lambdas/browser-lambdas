@@ -24,7 +24,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
             log.err('Background-port heartbeat failed.', err);
         }
     }, 1000);
-    bgPort.onDisconnect.addListener(() => clearInterval(heartbeat));
+    bgPort.onDisconnect.addListener(() => {
+        clearInterval(heartbeat);
+        for (const [id, entry] of pending) entry.resolve({ type: entry.responseType, id, error: 'The background connection closed. Run the function again.' });
+        pending.clear();
+    });
     bgPort.onMessage.addListener(async (msg) => {
         if (msg.type === 'FUNCTION_CALL_RESPONSE' ||
             msg.type === 'TAB_OPERATION_RESPONSE') {
@@ -45,16 +49,20 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
             return;
         }
         if (msg.id && pending.has(msg.id)) {
-            pending.get(msg.id)(msg);
+            pending.get(msg.id).resolve(msg);
             pending.delete(msg.id);
         }
     });
     postToBackground = (msg) => bgPort.postMessage(msg);
     sendToBackground = (msg) => new Promise((resolve) => {
         msg.id = msg.id || crypto.randomUUID();
-        pending.set(msg.id, resolve);
+        pending.set(msg.id, { resolve, responseType: msg.type.replace(/_REQUEST$/, '_RESPONSE') });
         log.dbg(`Forwarding request to background: type=${msg.type || msg.action || 'unknown'}, requestId=${msg.id}.`);
-        bgPort.postMessage(msg);
+        try { bgPort.postMessage(msg); }
+        catch (error) {
+            pending.delete(msg.id);
+            resolve({ type: msg.type.replace(/_REQUEST$/, '_RESPONSE'), id: msg.id, error: error.message });
+        }
     });
 }
 const handleFunctionCall = (msg, channelId) => {
@@ -159,7 +167,8 @@ if (typeof window !== 'undefined') {
                         break;
                     case 'GET_SECRET_REQUEST':
                     case 'GET_STORAGE_REQUEST':
-                    case 'SET_STORAGE_REQUEST': {
+                    case 'SET_STORAGE_REQUEST':
+                    case 'NETWORK_REQUEST': {
                         const r = await sendToBackground(msg);
                         channel.send(r);
                         break;

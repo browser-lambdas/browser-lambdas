@@ -3,7 +3,7 @@ import { sameStorageRecord } from './storageRecords.js';
 
 export const PROJECT_SETTINGS_KEY = 'local_storage_key_project_settings';
 const categories = ['functions', 'triggers', 'styles'];
-const booleans = ['enabled', 'userWorld', 'mainWorld', 'restrictUrls', 'poll', 'review', 'lock'];
+const booleans = ['enabled', 'userWorld', 'mainWorld', 'allowNetwork', 'restrictUrls', 'poll', 'review', 'lock'];
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const lines = (value) => (typeof value === 'string' ? value.split('\n') : Array.isArray(value) ? value : []).map((line) => {
     if (typeof line !== 'string') throw new Error('URL patterns must be text.');
@@ -16,6 +16,7 @@ export function normalizeProjectCategorySettings(input, category = 'functions') 
     for (const key of booleans) {
         if (category === 'functions' && key === 'enabled') continue;
         if (category !== 'functions' && ['userWorld', 'mainWorld'].includes(key)) continue;
+        if (category !== 'functions' && key === 'allowNetwork') continue;
         if (category === 'styles' && key === 'restrictUrls') continue;
         if (!Object.hasOwn(input, key)) continue;
         if (typeof input[key] !== 'boolean') throw new Error(`Invalid project setting: ${key}.`);

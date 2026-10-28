@@ -21,6 +21,7 @@ const LOCAL_STORAGE_KEY_BAAH_POLL_CHANGES = 'local_storage_key_baah_poll_changes
 const LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS = 'local_storage_key_allow_main_world_functions';
 const LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE = 'local_storage_key_allow_main_world_storage';
 const LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS = 'local_storage_key_allow_main_world_secrets';
+const LOCAL_STORAGE_KEY_ALLOW_NETWORK = 'local_storage_key_allow_network';
 const LOCAL_STORAGE_KEY_BAAH_PENDING_BATCHES = 'local_storage_key_baah_pending_batches';
 const LOCAL_STORAGE_KEY_TRIGGERS = 'local_storage_key_triggers';
 const DEFAULT_SHELL_POSITION = {
@@ -127,6 +128,8 @@ const mutateStorageItem = async (operation, item, expected) => chrome.runtime.se
 });
 const getAllowMainWorldFunctions = async () => (await getChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS)) === true;
 const setAllowMainWorldFunctions = async (enabled) => setChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS, enabled === true);
+const getAllowNetwork = async () => (await getChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_NETWORK)) === true;
+const setAllowNetwork = async (enabled) => setChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_NETWORK, enabled === true);
 const getAllowMainWorldStorage = async () => (await getChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE)) === true;
 const setAllowMainWorldStorage = async (enabled) => setChromeLocalStorage(LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE, enabled === true);
 const getTriggers = async () => {

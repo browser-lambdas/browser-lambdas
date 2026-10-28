@@ -21,7 +21,7 @@
 
 - Prefer static JavaScript, HTML and CSS wherever possible. Keep dependencies to an absolute minimum to reduce supply chain risk.
 - Build expert tooling with safe defaults that users can deliberately relax.
-- Generally support settings at resource, project and global levels. The most specific explicit setting wins; unset values inherit, falling back to the built-in safe default.
+- Support settings at resource, project and global levels. Unset values inherit from the parent level, falling back to the built-in safe default. Security safeguards are ceilings: lower levels may restrict access, never override a higher-level block. For other settings, the most specific explicit value wins.
 - Only explicit user choices through trusted controls may relax safeguards. Malicious actors or untrusted content must not make that choice for users.
 
 ## Browser access
