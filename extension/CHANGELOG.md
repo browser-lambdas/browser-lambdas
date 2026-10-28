@@ -1,3 +1,7 @@
+## 0.5.0
+
+- Add tabs network API
+
 ## 0.4.0
 
 - Added theme previews
