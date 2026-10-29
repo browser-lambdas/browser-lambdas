@@ -28,6 +28,8 @@ Trigger commands run in listed order, waiting for each authenticated runtime res
 
 Startup handshakes have a one-second deadline, cleared when the runtime acknowledges readiness. Both endpoints can report startup failure so waiting trigger dispatchers can stop; the runtime reports errors before closing its encrypted channel.
 
+After the lambda body returns successfully, the runtime drains tracked `ctx` request promises before reporting completion and releasing its invocation. Draining repeats for requests started by response callbacks; request failures retain their API-specific behavior, and channel failure settles pending requests. Arbitrary timers and unrelated promises are not tracked.
+
 Background preparation gives each invocation fresh rendezvous tokens and a session key. The runtime and content script use the same `shared/secureChannel.js` protocol as the popup menu and shell. It derives directional AES-GCM keys with HKDF, binds messages to their session, purpose, direction and sequence, and exchanges encrypted proofs before delivering application messages. Strict sequence checks reject replay and reordering. Authentication, decryption or validation failures stop application traffic and close the channel, with a bounded attempt to notify the peer through an encrypted failure control. Runtime-side failures therefore also finish the background invocation and release nested callers; pending runtime API requests resolve to undefined. The bridge still forwards privileged requests to background handlers for authorization.
 
 `ctx.tabs.this().close()` uses `CLOSE_CURRENT_TAB`; the background verifies the invocation and derives the tab ID from the content-script port. It never identifies the current tab by URL.
