@@ -16,6 +16,7 @@
 	let port = null;
 	let secureChannel = null;
 	const requestResolvers = {};
+	const pendingRequests = new Set();
 	let networkChannelError = null;
 	const sendEncrypted = (payload) => secureChannel?.send(payload) || Promise.resolve();
 
@@ -25,29 +26,34 @@
 		info: (...values) => sendEncrypted({ type: 'ACTIVITY_LOG', level: 'info', message: values.map(String).join(' ') })
 	});
 
-	const makeRequest = (type, extra = {}) =>
-		new Promise(async (resolve) => {
-			const id = crypto.randomUUID();
-			requestResolvers[id] = resolve;
-			await sendEncrypted({ type, id, ...extra });
-		});
+	const trackRequest = (promise) => {
+		pendingRequests.add(promise);
+		promise.then(() => pendingRequests.delete(promise), () => pendingRequests.delete(promise));
+		return promise;
+	};
 
-	const networkRequest = (operation, tabId, extra = {}) => new Promise((resolve, reject) => {
-		if (networkChannelError) return reject(networkChannelError);
-		const id = crypto.randomUUID();
-		const resolver = (value) => resolve(value);
-		resolver.reject = reject;
-		requestResolvers[id] = resolver;
-		sendEncrypted({ type: 'NETWORK_REQUEST', id, operation, tabId, ...extra }).catch((error) => {
-			delete requestResolvers[id];
-			reject(error);
-		});
-	});
+	const makeRequest = (type, extra = {}) =>
+		trackRequest(new Promise((resolve, reject) => {
+			if (networkChannelError) {
+				if (type === 'NETWORK_REQUEST') reject(networkChannelError);
+				else resolve(undefined);
+				return;
+			}
+			const id = crypto.randomUUID();
+			if (type === 'NETWORK_REQUEST') resolve.reject = reject;
+			requestResolvers[id] = resolve;
+			sendEncrypted({ type, id, ...extra }).catch((error) => {
+				delete requestResolvers[id];
+				if (resolve.reject) reject(error);
+				else resolve(undefined);
+			});
+		}));
+
+	const networkRequest = (operation, tabId, extra = {}) =>
+		makeRequest('NETWORK_REQUEST', { operation, tabId, ...extra });
 	const networkWrapper = (tabId = null) => ({
-		add: async (rule) => {
-			const installed = await networkRequest('add', tabId, { rule });
-			return { ...installed, remove: () => networkRequest('remove', tabId, { ruleId: installed.id }) };
-		},
+		add: (rule) => trackRequest(networkRequest('add', tabId, { rule }).then((installed) =>
+			({ ...installed, remove: () => networkRequest('remove', tabId, { ruleId: installed.id }) }))),
 		list: () => networkRequest('list', tabId),
 		clear: () => networkRequest('clear', tabId)
 	});
@@ -111,24 +117,18 @@
 				close: () => makeRequest('TAB_OPERATION_REQUEST', { operation: 'CLOSE_CURRENT_TAB' })
 			}),
 			new: (arg = {}) =>
-				new Promise(async (resolve) => {
-					const id = crypto.randomUUID();
-					requestResolvers[id] = (tab) => {
-						if (!tab) { resolve(undefined); return; }
-						const requestedUrl = typeof arg === 'string' ? arg : arg.url;
-						resolve(tabWrapper(tab.id, tab.url ?? requestedUrl, tab.title));
-					};
-					await sendEncrypted({
-						type: 'TAB_OPERATION_REQUEST',
-						id,
-						operation: 'NEW_TAB',
-						options: typeof arg === 'string' ? { url: arg } : arg
-					});
-				}),
+				trackRequest(makeRequest('TAB_OPERATION_REQUEST', {
+					operation: 'NEW_TAB',
+					options: typeof arg === 'string' ? { url: arg } : arg
+				}).then((tab) => {
+					if (!tab) return undefined;
+					const requestedUrl = typeof arg === 'string' ? arg : arg.url;
+					return tabWrapper(tab.id, tab.url ?? requestedUrl, tab.title);
+				})),
 			all: () =>
-				makeRequest('TAB_OPERATION_REQUEST', {
+				trackRequest(makeRequest('TAB_OPERATION_REQUEST', {
 					operation: 'GET_ALL_TABS'
-				}).then((tabs) => tabs.map((tab) => tabWrapper(tab.id, tab.url, tab.title)))
+				}).then((tabs) => tabs.map((tab) => tabWrapper(tab.id, tab.url, tab.title))))
 		}
 	};
 
@@ -225,7 +225,7 @@
 			};
 
 			const result = await runLambda();
-			await Promise.allSettled(Object.values(requestResolvers));
+			while (pendingRequests.size) await Promise.allSettled([...pendingRequests]);
 			await sendEncrypted({
 				type: 'LAMBDA_RESULT',
 				id: requestId,
