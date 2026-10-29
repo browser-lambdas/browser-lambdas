@@ -222,6 +222,7 @@ Next:
 											<tr><td>Secrets</td><td><code>ctx.secrets.get()</code></td><td>Access configured secrets</td></tr>
 											<tr><td>Run</td><td><code>ctx.run("foo bar")</code>, <code>ctx.tabs.this().run()</code></td><td>Execute another lambda on the current page</td></tr>
 											<tr><td>Tabs</td><td><code>ctx.tabs.new()</code>, <code>ctx.tabs.all()</code></td><td>Open, list and control browser tabs</td></tr>
+											<tr><td>Network</td><td><code>ctx.tabs.this().network</code></td><td>Redirect, block and change headers</td></tr>
 										</tbody>
 									</table>
 								</div>
@@ -342,6 +343,55 @@ await tab.close();</code></pre>
 for (const tab of tabs) {
   console.log(tab.title);
 }</code></pre>
+							</section>
+
+							<section class="doc-section">
+								<h2 id="network">Network</h2>
+								<p>Redirect, block or change headers in a tab. Also available on tabs from <code>ctx.tabs.new()</code> and <code>ctx.tabs.all()</code>.</p>
+								<p>Enable <strong>Allow network rules</strong> in Settings, then <strong>Network rules</strong> in the project’s Functions settings. Both default to off.</p>
+								<p>Rules survive function completion and reloads; changing origin, closing the tab or restarting the browser clears them. Origin cleanup is asynchronous.</p>
+								<h3 id="tabnetworkaddrule"><code>tab.network.add(rule)</code></h3>
+								<p>Adds a rule and returns a handle.</p>
+								<pre><code data-language="javascript">const network = ctx.tabs.this().network;
+const rule = await network.add({
+  match: { url: "https://example.com/api/*" },
+  redirect: "http://localhost:3000/api/*"
+});
+// /api/users?page=2 → http://localhost:3000/api/users?page=2</code></pre>
+								<p>Use absolute HTTP(S) URLs with one optional path/query <code>*</code>. A destination <code>*</code> inserts the captured suffix, including its query; omit it for an exact destination.</p>
+								<h4 id="network-block">Block</h4>
+								<pre><code data-language="javascript">await network.add({
+  match: {
+    url: "https://example.com/ads/*",
+    methods: ["GET"],
+    resourceTypes: ["image"]
+  },
+  block: true
+});</code></pre>
+								<h4 id="network-headers">Headers</h4>
+								<pre><code data-language="javascript">await network.add({
+  match: { url: "https://api.example.com/*" },
+  request: {
+    headers: {
+      set: { "X-Debug": "true" },
+      remove: ["X-Legacy"]
+    }
+  },
+  response: {
+    headers: {
+      set: { "Access-Control-Allow-Origin": "https://example.com" }
+    }
+  }
+});</code></pre>
+								<h3 id="tabnetworklist"><code>tab.network.list()</code></h3>
+								<p>Lists all Browser Lambdas rules for the tab, across functions.</p>
+								<pre><code data-language="javascript">console.log(await network.list());</code></pre>
+								<h3 id="networkruleremove"><code>rule.remove()</code></h3>
+								<p>Removes the returned rule. Removed or replaced handles do nothing.</p>
+								<pre><code data-language="javascript">await rule.remove();</code></pre>
+								<h3 id="tabnetworkclear"><code>tab.network.clear()</code></h3>
+								<p>Clears all Browser Lambdas rules in the tab.</p>
+								<pre><code data-language="javascript">await network.clear();</code></pre>
 							</section>
 						</div>
 

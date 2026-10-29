@@ -38,6 +38,18 @@ New lambdas inherit their project execution mode, falling back to user-script ex
 
 Project function and trigger policies are checked before injection. Styles use their project enable setting without URL filtering. Polling and review inherit global safeguards; project locks reject incoming additions, edits and deletions.
 
+## Tab network rules
+
+`networkRules.js` normalizes serializable rules and compiles them into Chrome DNR session rules. `network.js` verifies the invocation and every nested caller's current network grant before serving runtime operations. Global and project network gates both default to blocked and require explicit enablement. Function settings may restrict an enabled project further; they cannot bypass either gate. Trusted extension controls own grants, and sync preserves local choices. Installed rules retain their installing caller chain; policy changes and worker startup remove rules whose callers no longer have access. Re-enabling access never restores removed rules.
+
+Every tab wrapper exposes `network.add/list/clear`; returned handles expose `remove`. Rules belong to the tab, across lambdas. Identical definitions reuse their handle ID without changing priority; an identical normalized match with changed contents atomically replaces the whole rule with a new ID. Different matches coexist, with newer priorities resolving competing actions or changes to the same header. Redirect/block actions run before header modifications; combining them in one rule is rejected.
+
+Matching uses absolute HTTP(S) URLs with one optional path/query wildcard, optional methods and resource types. A redirect target wildcard inserts the captured suffix, including its query; literal targets replace the whole URL. Bodies, callbacks and wildcard hosts are unsupported and reject explicitly.
+
+Browser session rules execute independently of the worker; `chrome.storage.session` retains their definitions, origin and handle IDs. Mutations serialize, and failed metadata writes roll back installations. Worker initialization reconciles browser rules against metadata and permissions and removes orphaned or unauthorized rules. Legacy session rules without caller metadata are removed because their authorization cannot be verified. Expiry never reinstalls stale rules if metadata saving fails.
+
+Rules survive lambda completion, reloads and same-origin navigation. Top-frame navigation events expire them on origin changes, and tab closure removes them. Navigation cleanup is asynchronous, not an atomic document-origin security boundary. Installation affects subsequent requests and cannot intercept a new tab's already-started initial load. DNR also cannot modify responses synthesized by a page service worker.
+
 ## Data and updates
 
 Resources and settings live in `chrome.storage.local`; several resource collections are JSON strings. `storage.js` supplies page-facing helpers, while background constants and repositories serve privileged handlers.
@@ -80,6 +92,7 @@ Global shell settings retain the shortcut binding independently of its enable to
 | Existing explicit function execution modes stay explicit; new functions use an empty mode to inherit | `src/shared/records.js`, `src/background/executeLambda.js`; project defaults apply without changing installed item choices | Explicit user migration to inherited modes |
 | The removed project function enable switch maps a saved denial to both worlds off | `src/shared/projectPolicy.js`; keeps disabled projects disabled using the remaining controls | Project settings have been saved without the legacy `enabled` field |
 | Removed style URL filters are ignored and dropped during normalization | `src/shared/projectPolicy.js`; prevents hidden filters from blocking styles after the controls were removed | Saved project settings no longer contain style URL filters |
+| Session network rules without installing callers are discarded | `src/background/network.js`; their current authorization cannot be verified | All surviving session rules contain caller metadata |
 
 Removal conditions are review criteria, not scheduled removals. This is an initial map of observed compatibility handling, not an exhaustive inventory; discuss breaking changes first.
 

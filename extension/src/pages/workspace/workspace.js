@@ -13,6 +13,7 @@ import { renderCallerRestrictions, handleCallerRestrictionsEvent } from './calle
 import { PROJECT_SETTINGS_KEY, getProjectSettings, normalizeProjectSettings, getProjectCategorySettings } from '../../shared/projectPolicy.js';
 import { settingSource } from '../shared/settingSource.js';
 import { mountTerminalPreview } from '../shared/terminalPreview.js';
+import { effectiveNetworkAccess } from '../../shared/networkPolicy.js';
 
 const VALID_TABS = ['functions', 'storage', 'triggers', 'secrets', 'styles', 'activity'];
 const PANE_TYPE_BY_TAB = {
@@ -64,6 +65,7 @@ const state = {
   allowMainWorldSecrets: false,
   allowMainWorldStorage: false,
   allowMainWorldFunctions: false,
+  allowNetwork: false,
   sidebarRename: null,
   notice: ''
 };
@@ -470,7 +472,13 @@ function renderAccessControls(node) {
   if (projectPolicy && (!projectPolicy.enabled || !projectPolicy.userWorld)) execution.worlds = execution.worlds.filter((world) => world !== 'USER_SCRIPT');
   const inheritedWorld = projectPolicy?.mode || 'USER_SCRIPT';
   const selectedWorld = editable.world || inheritedWorld;
+  const networkProject = state.projectSettings[editable.project || 'default']?.functions || {};
+  const inheritedNetwork = effectiveNetworkAccess({}, networkProject, state.allowNetwork);
+  const networkSource = state.allowNetwork !== true
+    ? '<a href="./settings.html#network-access" target="_blank" rel="noopener">global settings</a>'
+    : networkProject.allowNetwork !== true ? projectSettingLink(editable, 'functions', 'allowNetwork') : '';
   return `<section class="access-controls" data-testid="${category}-security"><h3>Security</h3>
+    ${type === 'lambda' ? `<label class="access-select-row" for="network-${node.id}"><span>Network rules:</span><select id="network-${node.id}" data-testid="function-network-access" data-pane-id="${node.id}" data-action="network-access" ${inheritedNetwork ? '' : 'disabled'}><option value="blocked" hidden disabled ${!inheritedNetwork ? 'selected' : ''}>Blocked</option><option value="" ${inheritedNetwork && typeof editable.allowNetwork !== 'boolean' ? 'selected' : ''}>Use project default (${inheritedNetwork ? 'allowed' : 'blocked'})</option><option value="true" ${inheritedNetwork && editable.allowNetwork === true ? 'selected' : ''}>Allow</option><option value="false" ${inheritedNetwork && editable.allowNetwork === false ? 'selected' : ''}>Block</option></select></label><div data-testid="function-network-source">${settingSource({ value: false, controlled: networkSource, warning: networkSource ? `Network rules are disabled in ${networkSource}` : '' })}</div>` : ''}
     ${accessToggle(node, type === 'storage' ? 'Enable in user world' : 'Allow execution in user world', 'access-world', policy.allowedWorlds.includes('user_scripts'), 'data-world="user_scripts"', projectPolicy && (!projectPolicy.enabled || !projectPolicy.userWorld))}
     ${projectPolicy && !projectPolicy.userWorld ? settingSource({ value: false, controlled: projectSettingLink(editable, 'functions', 'userWorld') }) : ''}
     ${accessToggle(node, type === 'storage' ? 'Enable in main world' : 'Allow execution in main world', 'access-world', policy.allowedWorlds.includes('main'), 'data-world="main"', !enabled)}
@@ -845,6 +853,7 @@ function render() {
       onChange: () => { pane.changed = true; pane.error = ''; void autosaveProjectSettings(pane); },
       onRetry: () => { void autosaveProjectSettings(pane); }, globals: {
       allowMainWorldFunctions: state.allowMainWorldFunctions,
+      allowNetwork: state.allowNetwork,
       baahPollChanges: state.baahPollChanges,
       baahRequireReview: state.baahRequireReview
     } });
@@ -1214,6 +1223,17 @@ app.addEventListener('error', (event) => {
 app.addEventListener('input', (event) => {
   if (handleCallerRestrictionsEvent(event, state.root)) return;
   const target = event.target;
+  if (target.dataset.action === 'network-access') {
+    if (!event.isTrusted || target.disabled) return;
+    const node = findPane(state.root, target.dataset.paneId);
+    if (node?.pane.type !== 'lambda') return;
+    if (target.value === '') delete node.pane.editable.allowNetwork;
+    else node.pane.editable.allowNetwork = target.value === 'true';
+    node.pane.changed = true;
+    node.pane.error = '';
+    renderPreservingFocus();
+    return;
+  }
   if (target.dataset.action === 'rename-input') { state.sidebarRename.value = target.value; return; }
   if (target.dataset.action === 'search') {
     state.search = target.value;
@@ -1336,6 +1356,7 @@ window.addEventListener('hashchange', () => {
   state.allowMainWorldSecrets = await getAllowMainWorldSecrets();
   state.allowMainWorldStorage = await getAllowMainWorldStorage();
   state.allowMainWorldFunctions = await getAllowMainWorldFunctions();
+  state.allowNetwork = await getAllowNetwork();
   state.styles = await getShellThemes();
   state.shellPrompt = await getShellPrompt().catch(() => '>');
   try { state.projectSettings = await getProjectSettings(); }
@@ -1376,6 +1397,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === 'local') {
     const globals = {};
+    if (changes[LOCAL_STORAGE_KEY_ALLOW_NETWORK]) globals.allowNetwork = state.allowNetwork = changes[LOCAL_STORAGE_KEY_ALLOW_NETWORK].newValue === true;
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS]) globals.allowMainWorldFunctions = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS].newValue === true;
     if (changes.local_storage_key_baah_require_review) globals.baahRequireReview = state.baahRequireReview = changes.local_storage_key_baah_require_review.newValue !== false;
     if (changes.local_storage_key_baah_poll_changes) {
@@ -1386,7 +1408,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === 'local' && changes.activityLogs) { state.activityLogs = changes.activityLogs.newValue || []; if (state.tab === 'activity') render(); }
   if (area === 'local' && changes[LOCAL_STORAGE_KEY_STORAGE] && accessPolicy) void refreshStorage();
-  if (area === 'local' && (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE])) {
+  if (area === 'local' && (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS] || changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE] || changes[LOCAL_STORAGE_KEY_ALLOW_NETWORK])) {
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS]) state.allowMainWorldFunctions = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS].newValue === true;
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS]) state.allowMainWorldSecrets = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS].newValue === true;
     if (changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE]) state.allowMainWorldStorage = changes[LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE].newValue === true;

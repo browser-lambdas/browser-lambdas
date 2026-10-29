@@ -16,6 +16,7 @@
 	let port = null;
 	let secureChannel = null;
 	const requestResolvers = {};
+	let networkChannelError = null;
 	const sendEncrypted = (payload) => secureChannel?.send(payload) || Promise.resolve();
 
 	const activityLog = Object.freeze({
@@ -31,10 +32,31 @@
 			await sendEncrypted({ type, id, ...extra });
 		});
 
+	const networkRequest = (operation, tabId, extra = {}) => new Promise((resolve, reject) => {
+		if (networkChannelError) return reject(networkChannelError);
+		const id = crypto.randomUUID();
+		const resolver = (value) => resolve(value);
+		resolver.reject = reject;
+		requestResolvers[id] = resolver;
+		sendEncrypted({ type: 'NETWORK_REQUEST', id, operation, tabId, ...extra }).catch((error) => {
+			delete requestResolvers[id];
+			reject(error);
+		});
+	});
+	const networkWrapper = (tabId = null) => ({
+		add: async (rule) => {
+			const installed = await networkRequest('add', tabId, { rule });
+			return { ...installed, remove: () => networkRequest('remove', tabId, { ruleId: installed.id }) };
+		},
+		list: () => networkRequest('list', tabId),
+		clear: () => networkRequest('clear', tabId)
+	});
+
 	const tabWrapper = (tabId, url, title = '') => ({
 		id: tabId,
 		url,
 		title,
+		network: networkWrapper(tabId),
 		focus: () =>
 			makeRequest('TAB_OPERATION_REQUEST', {
 				operation: 'FOCUS_TAB',
@@ -84,6 +106,7 @@
 			}),
 		tabs: {
 			this: () => ({
+				network: networkWrapper(),
 				run: (cmd) => ctx.run(cmd),
 				close: () => makeRequest('TAB_OPERATION_REQUEST', { operation: 'CLOSE_CURRENT_TAB' })
 			}),
@@ -121,6 +144,12 @@
 	const handleSecureMessage = async (msg) => {
 		const resolve = requestResolvers[msg.id];
 		if (resolve) {
+			if (msg.type === 'NETWORK_RESPONSE') {
+				delete requestResolvers[msg.id];
+				if (msg.error) resolve.reject(new Error(msg.error));
+				else resolve(msg.value);
+				return;
+			}
 			activityLog.dbg(`Runtime request resolved: type=${msg.type || 'unknown'}, requestId=${msg.id}.`);
             if (msg.error) {
                 printToShell('warn', ['GET_SECRET_RESPONSE', 'GET_STORAGE_RESPONSE', 'SET_STORAGE_RESPONSE'].includes(msg.type)
@@ -156,9 +185,13 @@
 					port, key: sessionKey, sessionId: requestId, purpose: 'lambda', role: 'client',
 					onMessage: handleSecureMessage,
 					onError: (error) => {
+						networkChannelError = new Error(error?.message || 'The network API connection failed.');
 						for (const [id, resolveRequest] of Object.entries(requestResolvers)) {
 							delete requestResolvers[id];
-							try { resolveRequest(undefined); } catch {}
+							try {
+								if (resolveRequest.reject) resolveRequest.reject(networkChannelError);
+								else resolveRequest(undefined);
+							} catch {}
 						}
 						reject(error);
 					}

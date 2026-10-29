@@ -15,7 +15,7 @@ test('category navigation, deep links, history and responsive layout', async () 
 			demo: ['Demo', 'Preloaded functions', 'hello', 'vi-nav'],
 			intro: ['Hack your browsing', 'How It Works'],
 			'quick-start': ['Hello world', 'Whats next?'],
-			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Run', 'Chain', 'Tabs'],
+			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Run', 'Chain', 'Tabs', 'Network'],
 			security: ['Security', 'Approach', 'Bad Pages', 'Execution Worlds', 'Securing communication paths', 'baah CLI'],
 			baah: ['baah', 'Connections', 'Commands', 'baah init .', 'baah set', 'baah push', 'baah ls', 'baah info', 'baah rm', 'baah.toml'],
 		};
@@ -73,6 +73,9 @@ test('category navigation, deep links, history and responsive layout', async () 
 		await check('ctx');
 		await page.reload();
 		await check('ctx');
+		await page.goto(`${url}#network`);
+		await check('ctx');
+		await page.screenshot({ path: '/private/tmp/browser-lambdas-network-docs-desktop.png' });
 		await page.goto(`${url}#baah-2`);
 		await check('baah');
 		assert.deepEqual(await page.locator('[id]').evaluateAll(els => {

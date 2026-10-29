@@ -13,6 +13,7 @@ const settingKeys = [
   LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_FUNCTIONS,
   LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_STORAGE,
   LOCAL_STORAGE_KEY_ALLOW_MAIN_WORLD_SECRETS,
+  LOCAL_STORAGE_KEY_ALLOW_NETWORK,
   LOCAL_STORAGE_KEY_BAAH_REQUIRE_REVIEW,
   LOCAL_STORAGE_KEY_BAAH_POLL_CHANGES,
   LOCAL_STORAGE_KEY_WS_PORT,
@@ -29,6 +30,7 @@ const state = {
   allowMainWorldSecrets: false,
   allowMainWorldStorage: false,
   allowMainWorldFunctions: false,
+  allowNetwork: false,
   baahRequireReview: true,
   baahPollChanges: true,
   wsPort: 4455,
@@ -144,6 +146,11 @@ function renderSettings() {
 
       <section class="settings-section" aria-labelledby="security-settings">
         <h2 class="settings-group-title" id="security-settings">Security</h2>
+        <div class="settings-block" id="network-access">
+          <h3 class="section-title">Network rules</h3>
+          <p class="section-description">Allow functions to redirect or block tab traffic and change headers. Projects must also enable network rules.</p>
+          <div class="toggle-row"><div>Allow network rules</div>${toggle('Allow network rules', state.allowNetwork, 'toggle-network', 'data-testid="allow-network"')}</div>
+        </div>
         <div class="settings-block">
           <h3 class="section-title">Main world execution</h3>
           <p class="section-description">Main-world code shares a JavaScript environment with the page and can expose storage and secrets to untrusted scripts. Each item must also allow the main world and the current page.</p>
@@ -186,6 +193,7 @@ async function loadSettings() {
   state.allowMainWorldSecrets = await getAllowMainWorldSecrets();
   state.allowMainWorldStorage = await getAllowMainWorldStorage();
   state.allowMainWorldFunctions = await getAllowMainWorldFunctions();
+  state.allowNetwork = await getAllowNetwork();
   state.baahRequireReview = await getBaahRequireReview();
   state.baahPollChanges = await getBaahPollChanges();
   await loadBaahToken();
@@ -271,6 +279,17 @@ app.addEventListener('click', async (event) => {
   if (action === 'toggle-always-on') {
     state.alwaysOn = !state.alwaysOn;
     await setShellAlwaysOn(state.alwaysOn);
+  }
+  if (action === 'toggle-network') {
+    if (!event.isTrusted) return;
+    try {
+      await setAllowNetwork(!state.allowNetwork);
+      state.notice = '';
+    } catch {
+      state.notice = 'Unable to save network access. Please try again.';
+      render();
+      return;
+    }
   }
   const category = mainWorldCategories.find(({ label }) => action === `toggle-main-world-${label}`);
   if (category) {
