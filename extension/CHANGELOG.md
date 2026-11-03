@@ -1,3 +1,7 @@
+## 0.6.0
+
+- Update injection method and add ctx.main API
+
 ## 0.5.0
 
 - Add tabs network API
