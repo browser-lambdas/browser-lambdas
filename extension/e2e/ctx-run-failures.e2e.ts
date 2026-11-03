@@ -24,7 +24,8 @@ test('nested failures warn, resolve, and stop at the maximum depth', async ({
 	page,
 	extensionId,
 	localTestPage,
-	reactionTime
+	reactionTime,
+	extensionContext
 }) => {
 	const workspace = `chrome-extension://${extensionId}`;
 
@@ -33,8 +34,8 @@ test('nested failures warn, resolve, and stop at the maximum depth', async ({
 	await createLambda(page, 'ctx-test-run-throwing-child', 'throw new Error("child exploded");', reactionTime);
 	await createLambda(page, 'ctx-test-run-missing-parent', "await ctx.run('ctx-test-run-does-not-exist'); console.log('parent continued');", reactionTime);
 	await createLambda(page, 'ctx-test-run-throwing-parent', "await ctx.run('ctx-test-run-throwing-child'); console.log('parent continued');", reactionTime);
-	await createLambda(page, 'ctx-test-run-broken-channel', "port.onmessage({ data: { invalid: 'ciphertext' } }); await new Promise(() => {});", reactionTime);
-	await createLambda(page, 'ctx-test-run-channel-parent', "await ctx.run('ctx-test-run-broken-channel'); console.log('parent after channel failure');", reactionTime);
+	await createLambda(page, 'ctx-test-run-waiting-child', "document.body.dataset.childWaiting = 'yes'; await new Promise(() => {});", reactionTime);
+	await createLambda(page, 'ctx-test-run-channel-parent', `const tab = await ctx.tabs.new(${JSON.stringify(localTestPage + '/nested-child')}); await tab.run('ctx-test-run-waiting-child'); console.log('parent after channel failure');`, reactionTime);
 	await createLambda(page, 'ctx-test-run-recursive', "await ctx.run('ctx-test-run-recursive');", reactionTime);
 
 	await page.goto(localTestPage);
@@ -64,7 +65,12 @@ test('nested failures warn, resolve, and stop at the maximum depth', async ({
 	await input.press('Enter');
 	await input.fill('ctx-test-run-channel-parent');
 	await input.press('Enter');
-	await expectOutput('Nested lambda request failed: The function runtime connection failed.');
+	await expect.poll(() => extensionContext.pages().find((candidate) => candidate.url() === localTestPage + '/nested-child')).toBeTruthy();
+	const childPage = extensionContext.pages().find((candidate) => candidate.url() === localTestPage + '/nested-child')!;
+	await expect(childPage.locator('body')).toHaveAttribute('data-child-waiting', 'yes');
+	await childPage.close();
+	await expectOutput('Nested lambda request failed:');
+	await expectOutput('before the function finished.');
 	await expectOutput('parent after channel failure');
 
 	await input.fill('.clear');

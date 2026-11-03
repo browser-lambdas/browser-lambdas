@@ -30,13 +30,15 @@ The Manifest V3 service worker handles execution and privileged operations. Orde
 
 Shell commands and URL triggers reach background execution, which resolves the lambda and checks access policy. It injects the lambda with the generated `ctx` runtime into the target tab, normally in `USER_SCRIPT` world. Main-world execution requires explicit permission.
 
-The runtime communicates through the content-script bridge to background handlers for storage, secrets and other privileged APIs. Page content and lambda execution contexts are distinct from trusted extension controls; granting access must remain a user decision.
+USER_SCRIPT runtimes connect directly to the worker through native `runtime.Port` messaging. A browser-injected, one-use grant binds each connection to its server-owned invocation, tab, frame and document. Privileged requests retain current resource permissions and nested-caller checks; request bodies cannot choose their authority.
 
-Each invocation gets a fresh session key and rendezvous tokens from the background worker. The runtime is injected with these values; the worker separately sends them to the content script through extension messaging.
+Named user-script worlds separate function code versions and caller chains. Calls within the same boundary share globals but receive independent invocation grants. World configurations are reference-counted, released on completion and recovered after worker loss. Chrome limits named worlds per document; a credential-free preflight rejects browser fallback before injecting a grant and asks the user to reload.
 
-The content script and runtime rendezvous through `window.postMessage` using matching tokens and a handshake ID, then transfer a `MessageChannel` port. The runtime, in-page popup menu and shell share [one authenticated channel protocol](extension/src/shared/secureChannel.js), embedded into the runtime at build time. It derives directional AES-GCM keys, exchanges encrypted proofs and binds packets to their session, purpose, direction and sequence. Session keys never travel through the window rendezvous.
+`ctx.main.get/call/run` keeps orchestration in USER_SCRIPT. The worker checks every caller's MAIN function grants and uses browser-mediated injection/results for a helper in the bound document. Helpers receive only explicit plain-data arguments, never privileged `ctx` or connection credentials.
 
-Failed authentication, invalid ciphertext, replay and reordering stop application traffic and close the port, with a bounded encrypted failure notification to the peer. Handshakes have deadlines; running lambdas have no execution timeout. Establishing this channel does not replace access-policy checks or isolate main-world JavaScript from page API manipulation.
+Full MAIN execution remains explicit opt-in and retains its encrypted content-script bridge. Credentials travel through document-targeted browser injection and the specific content-script Port, never tab-wide messaging. Public readiness tokens and MessageChannel transfer precede directional AES-GCM proofs and session-bound sequence checks. The same secure channel implementation remains used by menu and terminal frames. A hostile MAIN environment can still intercept data, keys and granted capabilities.
+
+Completion, revocation, navigation and disconnect remove invocation authority and settle pending work without replay or fallback. Native startup has a five-second deadline; MAIN's content-script bridge retains its one-second handshake deadline. Running lambdas have no execution timeout; MAIN helper calls stop waiting after 30 seconds, without undoing page effects.
 
 Start with [execution](extension/src/background/executeLambda.js), [runtime source](extension/src/background/template.js), [content messages](extension/src/content/messages.js) and [access policy](extension/src/shared/accessPolicy.js). Resource data and settings live in `chrome.storage.local`.
 

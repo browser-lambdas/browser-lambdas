@@ -6,7 +6,9 @@ import { lambdafy } from './lambdafy.js';
 import { findLambdas, isLambdaPending } from './getLambdas.js';
 import { generateSessionKey } from './generateSessionKey.js';
 import { getProjectSettings, getProjectCategorySettings, evaluateProjectAccess } from '../shared/projectPolicy.js';
-import { registerInvocation, finishInvocation } from './invocations.js';
+import { registerInvocation, finishInvocation, issueConnectionGrant, watchInvocation, verifiedInvocation } from './invocations.js';
+import { postToContent, contentPort } from './contentPorts.js';
+import { configureUserWorld, releaseUserWorld, checkUserWorld } from './userWorlds.js';
 import {
     MAIN_WORLD,
     USER_SCRIPT_WORLD,
@@ -15,39 +17,46 @@ import {
 
 export const MAX_NESTED_LAMBDA_DEPTH = 5;
 
-const prepareLambda = async (lambda, userInput, requestId, executionWorld, nestedDepth, tabId, callers) => {
-    const context = {
-        qToken: crypto.randomUUID(),
-        aToken: crypto.randomUUID(),
-        handshakeId: crypto.randomUUID(),
-        sessionKey: await generateSessionKey(),
-        requestId,
-        nestedDepth,
-        executionWorld
-    };
-    const code = lambdafy(lambda.func, userInput, context);
-    // This capability only travels through extension messaging, never the injected code.
-    const { token, completion } = registerInvocation({ lambda, tabId, executionWorld, requestId, callers });
-    context.invocationToken = token;
-    return { code, context, completion };
+const prepareLambda = async (lambda, userInput, requestId, executionWorld, nestedDepth, tabId, callers, worldId) => {
+    const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+    if (!frame?.documentId) throw new Error('The target page is unavailable. Reload it and try again.');
+    const { token, completion, ready } = registerInvocation({ lambda, tabId, documentId: frame.documentId, frameId: 0, worldId, executionWorld, requestId, callers });
+    try {
+        const native = executionWorld === USER_SCRIPT_WORLD;
+        const context = { requestId, nestedDepth, executionWorld, documentId: frame.documentId };
+        if (native) context.connectionGrant = issueConnectionGrant(token);
+        else Object.assign(context, {
+            qToken: crypto.randomUUID(), aToken: crypto.randomUUID(), handshakeId: crypto.randomUUID(),
+            sessionKey: await generateSessionKey()
+        });
+        const code = lambdafy(lambda.func, userInput, context);
+        // The canonical capability remains worker-owned; only a one-use grant is injected.
+        context.invocationToken = token;
+        const timeout = setTimeout(() => finishInvocation(token, tabId, requestId, { error: 'The function runtime connection timed out. Reload the page and try again.' }), 5000);
+        ready.then(() => clearTimeout(timeout));
+        watchInvocation(token, () => clearTimeout(timeout));
+        if (!native) watchInvocation(token, (result) => {
+            try { postToContent(tabId, frame.documentId, { type: 'RUNTIME_FINISHED', requestId, error: result.error }); } catch {}
+        });
+        return { code, context, completion, ready };
+    } catch (error) {
+        finishInvocation(token, tabId, requestId, { error: error.message });
+        throw error;
+    }
 };
 
-const initializeLambdaRuntime = (tabId, context) => chrome.tabs.sendMessage(tabId, {
-    type: 'BACKGROUND_INIT_HANDSHAKE',
-    ...context
-});
-
 const executeLambdaInMainWorld = async ({ lambda, tabId, userInput, requestId, nestedDepth, callers }) => {
-    const { code, context, completion } = await prepareLambda(lambda, userInput, requestId, MAIN_WORLD, nestedDepth, tabId, callers);
+    const { code, context, completion, ready } = await prepareLambda(lambda, userInput, requestId, MAIN_WORLD, nestedDepth, tabId, callers);
     try {
+        contentPort(tabId, context.documentId);
+        if (!(await verifiedInvocation(context.invocationToken, tabId))) throw new Error('Function access was revoked or its target page changed.');
         await chrome.scripting.executeScript({
-            target: { tabId },
-            world: 'MAIN',
-            func: (src) => new Function(src)(),
-            args: [code]
+            target: { tabId, documentIds: [context.documentId] }, world: 'MAIN',
+            func: (src) => { new Function(src)(); }, args: [code]
         });
-        await initializeLambdaRuntime(tabId, context);
-        return { started: true, completion };
+        postToContent(tabId, context.documentId, { type: 'BACKGROUND_INIT_HANDSHAKE', ...context });
+        const startup = await ready;
+        return { ...startup, completion };
     } catch (error) {
         finishInvocation(context.invocationToken, tabId, requestId, { error: error.message });
         throw error;
@@ -55,21 +64,24 @@ const executeLambdaInMainWorld = async ({ lambda, tabId, userInput, requestId, n
 };
 
 const executeLambdaInUserWorld = async ({ lambda, tabId, userInput, requestId, nestedDepth, callers }) => {
-    if (!chrome.userScripts?.execute)
-        throw new Error('User-script execution is not enabled in Chrome.');
-    const { code, context, completion } = await prepareLambda(lambda, userInput, requestId, USER_SCRIPT_WORLD, nestedDepth, tabId, callers);
+    const worldId = await configureUserWorld(lambda, callers);
+    let prepared;
     try {
+        prepared = await prepareLambda(lambda, userInput, requestId, USER_SCRIPT_WORLD, nestedDepth, tabId, callers, worldId);
+        const { code, context, completion, ready } = prepared;
+        completion.then(() => releaseUserWorld(worldId));
+        await checkUserWorld(tabId, context.documentId, worldId);
+        if (!(await verifiedInvocation(context.invocationToken, tabId))) throw new Error('Function access was revoked or its target page changed.');
         const results = await chrome.userScripts.execute({
-            target: { tabId },
-            world: 'USER_SCRIPT',
-            js: [{ code }]
+            target: { tabId, documentIds: [context.documentId] }, world: 'USER_SCRIPT',
+            worldId, js: [{ code }]
         });
-        if (results.length === 0)
-            throw new Error('The user script did not run in the selected tab.');
-        await initializeLambdaRuntime(tabId, context);
-        return { started: true, completion };
+        if (results.length !== 1 || results[0].error) throw new Error(results[0]?.error || 'The user script did not run in the selected document.');
+        const startup = await ready;
+        return { ...startup, completion };
     } catch (error) {
-        finishInvocation(context.invocationToken, tabId, requestId, { error: error.message });
+        if (prepared) finishInvocation(prepared.context.invocationToken, tabId, requestId, { error: error.message });
+        else await releaseUserWorld(worldId);
         throw error;
     }
 };

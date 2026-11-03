@@ -3,6 +3,10 @@ let tabId = null;
 const USER_SCRIPT_WORLD = 'USER_SCRIPT_WORLD';
 const MAIN_WORLD = 'MAIN_WORLD';
 const channelToPort = new Map();
+const runtimeHandshakes = new Map();
+const runtimeBackgroundRequests = new Map();
+let initializeRuntimeHandshake;
+let finishRuntimeHandshake = async (_requestId, _error) => {};
 const requestToChannel = new Map();
 // Send a message to the background script. This will be redefined if the
 // `chrome` runtime is available. Typing the parameter avoids `any` errors when
@@ -14,8 +18,8 @@ let sendToBackground = async () => {
     throw new Error('Chrome runtime not available.');
 };
 if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
-    const bgPort = chrome.runtime.connect();
-    const pending = new Map();
+    const bgPort = chrome.runtime.connect({ name: 'content-script' });
+    const pending = runtimeBackgroundRequests;
     const heartbeat = setInterval(() => {
         try {
             bgPort.postMessage({ type: 'HEARTBEAT' });
@@ -26,10 +30,17 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
     }, 1000);
     bgPort.onDisconnect.addListener(() => {
         clearInterval(heartbeat);
-        for (const [id, entry] of pending) entry.resolve({ type: entry.responseType, id, error: 'The background connection closed. Run the function again.' });
+        const error = 'The background connection closed. Reload the page and run the function again.';
+        if (typeof appendShellOutput === 'function') appendShellOutput('warn', [error]);
+        for (const requestId of [...runtimeHandshakes.keys()]) finishRuntimeHandshake(requestId, error);
+        for (const [id, entry] of pending) entry.resolve({ type: entry.responseType, id, error });
         pending.clear();
+        requestToChannel.clear();
     });
     bgPort.onMessage.addListener(async (msg) => {
+        if (msg.type === 'BACKGROUND_INIT_HANDSHAKE') { initializeRuntimeHandshake(msg); return; }
+        if (msg.type === 'RUNTIME_FINISHED') { await finishRuntimeHandshake(msg.requestId, msg.error); return; }
+        if (msg.type === 'SHELL_OUTPUT') { appendShellOutput(msg.level, Array.isArray(msg.values) ? msg.values : []); return; }
         if (msg.type === 'FUNCTION_CALL_RESPONSE' ||
             msg.type === 'TAB_OPERATION_RESPONSE') {
             const channelId = requestToChannel.get(msg.id);
@@ -56,7 +67,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
     postToBackground = (msg) => bgPort.postMessage(msg);
     sendToBackground = (msg) => new Promise((resolve) => {
         msg.id = msg.id || crypto.randomUUID();
-        pending.set(msg.id, { resolve, responseType: msg.type.replace(/_REQUEST$/, '_RESPONSE') });
+        pending.set(msg.id, { resolve, responseType: msg.type.replace(/_REQUEST$/, '_RESPONSE'), invocationToken: msg.invocationToken });
         log.dbg(`Forwarding request to background: type=${msg.type || msg.action || 'unknown'}, requestId=${msg.id}.`);
         try { bgPort.postMessage(msg); }
         catch (error) {
@@ -81,28 +92,54 @@ const handleFunctionCall = (msg, channelId) => {
 };
 if (typeof window !== 'undefined') {
     const handshakeMap = new Map();
+    finishRuntimeHandshake = async (requestId, error) => {
+        const hs = runtimeHandshakes.get(requestId);
+        if (!hs) return;
+        hs.completed = true;
+        clearTimeout(hs.timeout);
+        handshakeMap.delete(hs.aToken);
+        runtimeHandshakes.delete(requestId);
+        const entry = channelToPort.get(requestId);
+        channelToPort.delete(requestId);
+        for (const [id, channelId] of requestToChannel) {
+            if (channelId === requestId) requestToChannel.delete(id);
+        }
+        let notification;
+        if (entry && error) notification = entry.channel.send({ type: 'RUNTIME_CLOSED', error });
+        for (const [id, pending] of runtimeBackgroundRequests) {
+            if (pending.invocationToken !== hs.invocationToken) continue;
+            runtimeBackgroundRequests.delete(id);
+            pending.resolve({ type: pending.responseType, id, error: error || 'The function finished before its response arrived.' });
+        }
+        let timeout;
+        try {
+            if (notification) await Promise.race([notification, new Promise((resolve) => { timeout = setTimeout(resolve, 150); })]);
+        } catch { /* A failed channel may already be unable to deliver its close notification. */ }
+        finally {
+            clearTimeout(timeout);
+            entry?.channel.close();
+        }
+    };
     const failHandshake = (hs) => {
         if (hs.failed || hs.completed) return;
         hs.failed = true;
-        clearTimeout(hs.timeout);
-        handshakeMap.delete(hs.aToken);
-        channelToPort.get(hs.requestId)?.channel.close();
-        channelToPort.delete(hs.requestId);
         const error = 'The function runtime connection failed.';
+        finishRuntimeHandshake(hs.requestId, error);
         log.err(`Function handshake failed: requestId=${hs.requestId}.`);
         try {
             postToBackground({ type: 'LAMBDA_RESULT', id: hs.requestId, result: { error }, invocationToken: hs.invocationToken });
         } catch (err) { log.err('Unable to report the failed function handshake.', err); }
     };
+    initializeRuntimeHandshake = (msg) => {
+        log.dbg(`Function handshake initiated: requestId=${msg.requestId}.`);
+        const hs = { ...msg };
+        hs.timeout = setTimeout(() => failHandshake(hs), 1000);
+        runtimeHandshakes.set(msg.requestId, hs);
+        handshakeMap.set(msg.aToken, hs);
+        window.postMessage({ type: 'qToken', qToken: msg.qToken }, '*');
+    };
     if (typeof chrome !== 'undefined') {
         chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-            if (msg.type === 'BACKGROUND_INIT_HANDSHAKE') {
-                log.dbg(`Function handshake initiated: requestId=${msg.requestId}.`);
-                const hs = { ...msg };
-                hs.timeout = setTimeout(() => failHandshake(hs), 1000);
-                handshakeMap.set(msg.aToken, hs);
-                window.postMessage({ type: 'CONTENT_SCRIPT_INIT', qToken: msg.qToken }, '*');
-            }
             if (msg.action === 'OPEN_SHELL') {
                 // When triggered from the background script we
                 // don't use history by default.
@@ -136,12 +173,14 @@ if (typeof window !== 'undefined') {
             port: chan.port1, key: sessionKey, sessionId: channelId, purpose: 'lambda', role: 'host',
             onError: () => failHandshake(hs),
             onMessage: async (msg) => {
+                if (hs.completed || hs.failed) return;
                 // Only the trusted background handshake supplies caller identity.
                 msg.invocationToken = hs.invocationToken;
                 msg.executionWorld = hs.executionWorld;
                 switch (msg.type) {
                     case 'LAMBDA_READY':
                         clearTimeout(hs.timeout);
+                        postToBackground(msg);
                         break;
                     case 'SHELL_OUTPUT':
                         appendShellOutput(msg.level, Array.isArray(msg.values) ? msg.values : []);
@@ -160,17 +199,15 @@ if (typeof window !== 'undefined') {
                     case 'LAMBDA_RESULT':
                         msg.id = hs.requestId;
                         postToBackground(msg);
-                        hs.completed = true;
-                        clearTimeout(hs.timeout);
-                        channelToPort.delete(channelId);
-                        channel.close();
+                        await finishRuntimeHandshake(channelId);
                         break;
                     case 'GET_SECRET_REQUEST':
                     case 'GET_STORAGE_REQUEST':
                     case 'SET_STORAGE_REQUEST':
-                    case 'NETWORK_REQUEST': {
+                    case 'NETWORK_REQUEST':
+                    case 'MAIN_REQUEST': {
                         const r = await sendToBackground(msg);
-                        channel.send(r);
+                        if (!hs.completed && !hs.failed) channel.send(r);
                         break;
                     }
                 }
