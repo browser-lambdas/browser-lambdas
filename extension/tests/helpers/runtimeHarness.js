@@ -54,7 +54,7 @@ export function compileRuntime(code, context) {
     return lambdafy(code, 'test', context);
 }
 
-export async function runtime(code, { transport = 'native', respond, globals = {}, autoBind = true } = {}) {
+export async function runtime(code, { transport = 'native', respond, globals = {}, autoBind = true, beforeSend } = {}) {
     const time = clock(), finished = deferred(), captured = deferred();
     const messages = [], windowMessages = [], listeners = new Set(), waiters = [];
     const onMessage = event(), onDisconnect = event();
@@ -72,7 +72,7 @@ export async function runtime(code, { transport = 'native', respond, globals = {
     };
     const port = {
         onMessage, onDisconnect,
-        postMessage(message) { if (closed) throw new Error('Port is closed'); record(message); },
+        postMessage(message) { if (closed) throw new Error('Port is closed'); beforeSend?.(message); record(message); },
         disconnect() { if (!closed) { closed = true; onDisconnect.emit(); } }
     };
     const receive = (message) => transport === 'native' ? onMessage.emit(structuredClone(message)) : channelOptions.onMessage(structuredClone(message));
@@ -88,7 +88,7 @@ export async function runtime(code, { transport = 'native', respond, globals = {
         chrome: { runtime: { connect: () => port } },
         stubSecureChannel(options) {
             channelOptions = options;
-            return { ready: Promise.resolve(), send: async (message) => { record(message); }, close() { closed = true; } };
+            return { ready: Promise.resolve(), send: async (message) => { beforeSend?.(message); record(message); }, close() { closed = true; } };
         }
     });
     const context = { ...credentials(), ...(transport === 'native' ? { connectionGrant: 'one-use-grant' } : {}) };

@@ -39,6 +39,11 @@
 		for (const resolver of requestResolvers.values()) resolver.reject(connectionError);
 		requestResolvers.clear();
 	};
+	const trackRequest = (promise) => {
+		pendingRequests.add(promise);
+		promise.then(() => pendingRequests.delete(promise), () => pendingRequests.delete(promise));
+		return promise;
+	};
 	const makeRequest = (type, extra = {}, rejectErrors = false) => {
 		const id = crypto.randomUUID();
 		const promise = new Promise((resolve, reject) => {
@@ -49,9 +54,7 @@
 				reject(error);
 			});
 		});
-		pendingRequests.add(promise);
-		promise.then(() => pendingRequests.delete(promise), () => pendingRequests.delete(promise));
-		return promise;
+		return trackRequest(promise);
 	};
 	const handleMessage = (message) => {
 		if (message?.type === 'RUNTIME_CLOSED') return failConnection(new Error(message.error || 'The function connection closed.'));
@@ -66,10 +69,8 @@
 	};
 	const networkRequest = (operation, tabId, extra = {}) => makeRequest('NETWORK_REQUEST', { operation, tabId, ...extra }, true);
 	const networkWrapper = (tabId = null) => ({
-		add: async (rule) => {
-			const installed = await networkRequest('add', tabId, { rule });
-			return { ...installed, remove: () => networkRequest('remove', tabId, { ruleId: installed.id }) };
-		},
+		add: (rule) => trackRequest(networkRequest('add', tabId, { rule }).then((installed) =>
+			({ ...installed, remove: () => networkRequest('remove', tabId, { ruleId: installed.id }) }))),
 		list: () => networkRequest('list', tabId),
 		clear: () => networkRequest('clear', tabId)
 	});
@@ -121,19 +122,19 @@
 		run: (userInput, tabId = null) => makeRequest('FUNCTION_CALL_REQUEST', { userInput, depth: nestedDepth + 1, ...(tabId != null ? { tabId } : {}) }),
 		main: {
 			get: (path) => makeRequest('MAIN_REQUEST', { operation: 'get', path }, true),
-			call: async (path, ...args) => makeRequest('MAIN_REQUEST', { operation: 'call', path, args: plainArgument(args) }, true),
-			run: async (callback, arg) => {
+			call: (path, ...args) => trackRequest((async () => makeRequest('MAIN_REQUEST', { operation: 'call', path, args: plainArgument(args) }, true))()),
+			run: (callback, arg) => trackRequest((async () => {
 				if (typeof callback !== 'function') throw new Error('ctx.main.run requires a function and an optional plain-data argument.');
 				return makeRequest('MAIN_REQUEST', { operation: 'run', source: Function.prototype.toString.call(callback), arg: plainArgument(arg) }, true);
-			}
+			})())
 		},
 		tabs: {
 			this: () => ({ network: networkWrapper(), run: (command) => ctx.run(command), close: () => makeRequest('TAB_OPERATION_REQUEST', { operation: 'CLOSE_CURRENT_TAB' }) }),
-			new: async (arg = {}) => {
-				const tab = await makeRequest('TAB_OPERATION_REQUEST', { operation: 'NEW_TAB', options: typeof arg === 'string' ? { url: arg } : arg });
-				return tab ? tabWrapper(tab.id, tab.url ?? (typeof arg === 'string' ? arg : arg.url), tab.title) : undefined;
-			},
-			all: async () => (await makeRequest('TAB_OPERATION_REQUEST', { operation: 'GET_ALL_TABS' }))?.map((tab) => tabWrapper(tab.id, tab.url, tab.title))
+			new: (arg = {}) => trackRequest(makeRequest('TAB_OPERATION_REQUEST', {
+				operation: 'NEW_TAB', options: typeof arg === 'string' ? { url: arg } : arg
+			}).then((tab) => tab ? tabWrapper(tab.id, tab.url ?? (typeof arg === 'string' ? arg : arg.url), tab.title) : undefined)),
+			all: () => trackRequest(makeRequest('TAB_OPERATION_REQUEST', { operation: 'GET_ALL_TABS' })
+				.then((tabs) => tabs?.map((tab) => tabWrapper(tab.id, tab.url, tab.title))))
 		}
 	};
 	const runtime = {

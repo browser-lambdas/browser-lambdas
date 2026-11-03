@@ -3,7 +3,7 @@ import { test, expect } from './fixtures';
 
 test.describe.configure({ timeout: 120_000 });
 
-test('storage persists across lambdas', async ({
+for (const awaited of [true, false]) test(`storage persists across lambdas${awaited ? '' : ' without awaiting the write'}`, async ({
 	page,
 	extensionId,
 	localTestPage,
@@ -21,7 +21,9 @@ test('storage persists across lambdas', async ({
 	await page.waitForTimeout(reactionTime);
 	await page.keyboard.press('Enter');
 	await page.locator('.code-editor').click();
-	await page.keyboard.type("console.log(await ctx.kv.set('foo', 'bar'));");
+	await page.keyboard.type(awaited
+		? "console.log(await ctx.kv.set('foo', 'bar'));"
+		: "ctx.kv.set('foo', 'bar').then((saved) => console.log(saved));");
 	await page.waitForTimeout(reactionTime);
 	await allowFunctionOnTestPages(page);
 	await page.getByRole('button', { name: 'Save' }).click();

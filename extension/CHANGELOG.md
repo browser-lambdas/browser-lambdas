@@ -2,6 +2,10 @@
 
 - Update injection method and add ctx.main API
 
+### 0.5.1
+
+- await pending promises in ctx API before clean up
+
 ## 0.5.0
 
 - Add tabs network API
