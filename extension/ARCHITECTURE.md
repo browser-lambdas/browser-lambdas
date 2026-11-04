@@ -8,13 +8,13 @@ See the [root architecture](../ARCHITECTURE.md) for CLI sync and the runtime han
 | --- | --- | --- |
 | Background worker | Execution, trigger dispatch and privileged API handling | `src/background/index.js` |
 | Content scripts | Page integration, shell launch and runtime message bridge | `src/content/index.js`, `src/content/messages.js` |
-| Lambda runtime | Injected `ctx` API and encrypted invocation channel | `src/background/template.js` |
+| Lambda runtime | Injected `ctx` API with native USER_SCRIPT and encrypted MAIN transports | `src/background/template.js` |
 | Workspace | Resource editing, project grouping, panes and push review | `src/pages/workspace/workspace.js` |
 | Settings and popup | Global controls and extension entry actions | `src/pages/settings/settings.js`, `src/pages/popup/popup.js` |
 | Shell | Terminal presentation and frame integration | `src/pages/shell/shellUi.js`, `src/pages/shell/shell-frame.js` |
 | Shared code | Record factories, access policies, update helpers and sync | `src/shared/` |
 
-The injected runtime embeds `shared/secureChannel.js` at build time; content scripts and the menu and shell iframes load that same source as a classic script. The rendezvous differs by surface, while authentication, encryption, ordering and failure handling share one implementation.
+The injected runtime shares the `ctx` surface across two transports: native user-script Ports by default, and `shared/secureChannel.js` for full MAIN. The latter is embedded at build time and also loaded as a classic script by content scripts and menu and terminal frames.
 
 The worker and workspace use ES modules. Content scripts are ordered classic scripts sharing globals; `manifest.chrome.json` defines their order. Keep that distinction when extracting shared code.
 
@@ -26,13 +26,21 @@ Triggers control automatic execution and URL matching; functions own execution-w
 
 Trigger commands run in listed order, waiting for each authenticated runtime result before starting the next. A blocked or failed command, failed startup handshake, or disconnected tab stops the remaining commands in that trigger. Long-running functions have no execution timeout.
 
-Startup handshakes have a one-second deadline, cleared when the runtime acknowledges readiness. Both endpoints can report startup failure so waiting trigger dispatchers can stop; the runtime reports errors before closing its encrypted channel.
+`executeLambda.js` resolves and verifies the browser's target document before injection. `invocations.js` owns canonical caller ancestry, document identity, one-use grants, readiness and completion; permissions and the continued availability of a native world's messaging configuration are checked for requests. Native startup has a five-second deadline, while running lambdas have no execution timeout.
 
-After the lambda body returns successfully, the runtime drains tracked `ctx` request promises before reporting completion and releasing its invocation. Draining repeats for requests started by response callbacks; request failures retain their API-specific behavior, and channel failure settles pending requests. Arbitrary timers and unrelated promises are not tracked.
+After the lambda body returns successfully, the runtime drains tracked `ctx` request promises before reporting completion and releasing its invocation. This includes wrapper promises from tab, network and MAIN operations, so requests started by their response callbacks are also drained. Request failures retain their API-specific behavior; connection loss rejects pending requests. Arbitrary timers and unrelated promises are not tracked.
 
-Background preparation gives each invocation fresh rendezvous tokens and a session key. The runtime and content script use the same `shared/secureChannel.js` protocol as the popup menu and shell. It derives directional AES-GCM keys with HKDF, binds messages to their session, purpose, direction and sequence, and exchanges encrypted proofs before delivering application messages. Strict sequence checks reject replay and reordering. Authentication, decryption or validation failures stop application traffic and close the channel, with a bounded attempt to notify the peer through an encrypted failure control. Runtime-side failures therefore also finish the background invocation and release nested callers; pending runtime API requests resolve to undefined. The bridge still forwards privileged requests to background handlers for authorization.
+`nativeRuntime.js` handles only `onUserScriptConnect`: consume a grant, verify browser sender metadata, then bind the Port. Runtime messages cannot overwrite invocation identity, select their world or access content-script administration. Output is ordered and drained before completion; native clients leave normal disconnect to the worker. `runtimeRequests.js` shares authorized runtime operations with the full-MAIN content relay. Nested calls await the child's invocation completion without global caller-supplied response routing maps.
 
-`ctx.tabs.this().close()` uses `CLOSE_CURRENT_TAB`; the background verifies the invocation and derives the tab ID from the content-script port. It never identifies the current tab by URL.
+`userWorlds.js` hashes function identity, code and caller ancestry into a named world. Concurrent calls in the same boundary share globals and configuration references, but separate grants and Ports. Configurations are explicitly enabled, released when unused and cleared on worker startup. Chrome retains JavaScript worlds until navigation and caps distinct worlds per document. The default world has messaging disabled; a credential-free preflight rejects fallback before code or grants are injected. Repeated calls reuse their boundary, while a new boundary beyond the browser limit fails with a reload instruction.
+
+`mainOperations.js` implements `ctx.main.get/call/run`. All ancestors must pass their MAIN item, project and global function gates in addition to normal invocation verification. Packaged get/call helpers preserve method receivers; run serializes a callback with one explicit argument, outside the helper's lexical scope. Browser APIs target the bound document and return validated plain JSON snapshots. There is no public window request/reply channel, privileged helper context or automatic retry. Errors reject the call; a 30-second waiting deadline cannot cancel effects or synchronous page work.
+
+`contentPorts.js` holds validated top-frame content connections separately from native runtime connections. Only that document's private Port delivers full-MAIN handshake credentials. `handlePortMessage.js` verifies the legacy invocation before dispatching runtime operations; native Ports never enter this handler or replace content readiness entries.
+
+Full MAIN retains qToken/aToken rendezvous, window MessageChannel transfer and the shared authenticated encryption protocol. It derives directional AES-GCM keys, checks session/purpose/sequence and exchanges encrypted proofs before application traffic. The content-script startup deadline remains one second. MAIN completion and revocation send authenticated closure controls and clean pending routing; background loss closes all active bridges. A hostile MAIN environment can still compromise the runtime and its keys. This bridge has no USER_SCRIPT or plaintext fallback.
+
+`ctx.tabs.this().close()` uses `CLOSE_CURRENT_TAB`; the background verifies the invocation and derives the tab ID from its bound browser connection. It never identifies the current tab by URL.
 
 `accessPolicy.js` owns world and URL policy normalization and evaluation. `records.js` owns creation defaults; reuse these instead of constructing resource records or duplicating policy logic in views.
 

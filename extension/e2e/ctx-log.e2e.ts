@@ -2,16 +2,17 @@ import { test, expect } from './fixtures';
 
 test.describe.configure({ timeout: 120_000 });
 
-test('ctx.log records user levels with tab context while lifecycle logs remain debug', async ({ page, extensionContext, extensionId, localTestPage }) => {
+for (const world of ['USER_SCRIPT', 'MAIN']) test(`ctx.log records user levels with tab context while ${world} lifecycle logs remain debug`, async ({ page, extensionContext, extensionId, localTestPage }) => {
 	const worker = extensionContext.serviceWorkers()[0] || await extensionContext.waitForEvent('serviceworker');
 	await page.goto(`chrome-extension://${extensionId}/settings.html`);
-	await page.evaluate(() => chrome.storage.local.set({
+	await page.evaluate((world) => chrome.storage.local.set({
+		local_storage_key_allow_main_world_functions: world === 'MAIN',
 		activityLogs: [],
 		local_storage_key_lambdas: JSON.stringify([{
-			id: 'activity-levels', name: 'activity-levels', project: '', world: 'USER_SCRIPT', allowedWorlds: ['user_scripts'], urlAllowlistEnabled: true, urlPatterns: ['*'],
+			id: 'activity-levels', name: 'activity-levels', project: '', world, allowedWorlds: ['user_scripts', 'main'], urlAllowlistEnabled: true, urlPatterns: ['*'],
 			func: 'ctx.log.dbg("user debug", {ok:true}); ctx.log.info("user info 🐑\\nnext"); ctx.log.err("user error", "<script>bad</script>"); return 42;'
 		}])
-	}));
+	}), world);
 	await page.goto(localTestPage);
 	await page.waitForTimeout(500);
 	await page.keyboard.press('Meta+k');
@@ -37,11 +38,18 @@ test('ctx.log records user levels with tab context while lifecycle logs remain d
 		expect(entry.timestamp).toEqual(expect.any(Number));
 	}
 	const tabRows = snapshot.filter((entry: any) => entry.tabId === userRows[0].tabId);
-	expect(tabRows.filter((entry: any) => entry.message.startsWith('Secure function channel established:'))).toHaveLength(1);
-	expect(tabRows.filter((entry: any) => entry.message.startsWith('Secure runtime channel established:'))).toHaveLength(1);
+	const transport = world === 'MAIN' ? 'Secure' : 'Native';
+	for (const endpoint of ['function', 'runtime']) {
+		const rows = tabRows.filter((entry: any) => entry.message.startsWith(`${transport} ${endpoint} channel established:`));
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ level: 'debug', tabId: userRows[0].tabId, uri: localTestPage + '/' });
+	}
 	expect(tabRows.some((entry: any) => entry.level === 'info' && entry.message.includes('Function execution'))).toBe(false);
 	expect(tabRows.some((entry: any) => entry.level === 'error' && entry.message.includes('Unable to deliver function result'))).toBe(false);
-	const completion = tabRows.find((entry: any) => entry.message.startsWith('Top-level function result completed:'));
+	await expect.poll(async () => worker.evaluate(async () => ((await chrome.storage.local.get('activityLogs')).activityLogs || [])
+		.find((entry: any) => entry.message.startsWith('Top-level function result completed:')))).toMatchObject({ level: 'debug', tabId: userRows[0].tabId, uri: localTestPage + '/' });
+	const completion = (await worker.evaluate(async () => (await chrome.storage.local.get('activityLogs')).activityLogs || []))
+		.find((entry: any) => entry.message.startsWith('Top-level function result completed:'));
 	expect(completion).toMatchObject({ level: 'debug', tabId: userRows[0].tabId, uri: localTestPage + '/' });
 });
 

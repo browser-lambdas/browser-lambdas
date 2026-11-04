@@ -1,3 +1,4 @@
+import { backgroundBrowser } from './helpers/backgroundBrowser.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runTriggers } from '../src/background/runTriggers.js';
@@ -6,26 +7,21 @@ import { applyTriggerDefinitionUpdate } from '../src/shared/triggerUpdates.js';
 import { finishInvocation, clearTabInvocations } from '../src/background/invocations.js';
 
 const triggerKey = 'local_storage_key_triggers';
-let db, injections, pageUrl, afterInjection;
+let db, injections, pageUrl, afterInjection, browser;
 const functionItem = (extra = {}) => ({ id: 'f', name: 'target', func: 'console.log("PRIVATE_CODE");', world: 'MAIN', allowedWorlds: ['user_scripts', 'main'], urlAllowlistEnabled: true, urlPatterns: ['*'], ...extra });
 const triggerItem = (extra = {}) => ({ id: 't', name: 'trigger', patterns: ['https://example.com/*'], commands: ['target'], allowedWorlds: ['user_scripts', 'main'], ...extra });
 function setup(trigger = triggerItem(), fn = functionItem()) {
-    clearTabInvocations(1);
-    db = {
+    browser = backgroundBrowser([fn]);
+    db = browser.db;
+    Object.assign(db, {
         [triggerKey]: JSON.stringify([trigger]),
-        local_storage_key_lambdas: JSON.stringify([fn]),
         local_storage_key_allow_main_world_functions: true,
         local_storage_key_allow_main_world_triggers: true
-    };
-    injections = []; pageUrl = 'https://example.com/page'; afterInjection = () => {};
-    const inject = async (args) => { injections.push(args); afterInjection(); return [{}]; };
-    globalThis.chrome = {
-        storage: { local: { get: async (key) => ({ [key]: db[key] }), set: async (value) => Object.assign(db, value) } },
-        tabs: { get: async () => ({ url: pageUrl }), sendMessage: async (tabId, context) => {
-            finishInvocation(context.invocationToken, tabId, context.requestId);
-        } },
-        scripting: { executeScript: inject }, userScripts: { execute: inject }
-    };
+    });
+    injections = browser.injections; pageUrl = 'https://example.com/page'; afterInjection = () => {};
+    browser.afterInjection = () => afterInjection();
+    chrome.tabs.get = async () => ({ url: pageUrl });
+    chrome.webNavigation.getFrame = async () => ({ documentId: 'doc-1', url: pageUrl });
 }
 
 test('main-world trigger commands use function gates and ignore obsolete trigger world gates', async () => {
@@ -57,9 +53,9 @@ test('trigger commands wait for the matching authenticated result before continu
     let first;
     let started;
     const ready = new Promise((resolve) => { started = resolve; });
-    chrome.tabs.sendMessage = async (tabId, context) => {
-        if (!first) { first = context; started(); }
-        else finishInvocation(context.invocationToken, tabId, context.requestId);
+    browser.onRuntime = ({ context, port }) => {
+        if (context) { first = context; started(); }
+        else return port.receive({ type: "LAMBDA_RESULT", result: {} });
     };
     const running = runTriggers(1, pageUrl);
     await ready;
@@ -81,7 +77,7 @@ test('runtime errors, blocked commands, injection failures and disconnected tabs
         setup(triggerItem({ commands: ['target', '@user-world target'] }));
         if (failure === 'blocked') db.local_storage_key_lambdas = JSON.stringify([functionItem({ allowedWorlds: [] })]);
         if (failure === 'injection') chrome.scripting.executeScript = async (args) => { injections.push(args); throw new Error('injection failed'); };
-        chrome.tabs.sendMessage = async (tabId, context) => {
+        browser.onRuntime = ({ tabId, context }) => {
             if (failure === 'disconnect') clearTabInvocations(tabId);
             else finishInvocation(context.invocationToken, tabId, context.requestId, { error: 'runtime failed' });
         };

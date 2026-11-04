@@ -1,182 +1,48 @@
-import { appendActivityLog, log } from './activityLog.js';
-import { handleItemAccess } from './itemAccess.js';
-import { executeLambda } from './executeLambda.js';
-import { verifiedInvocation, finishInvocation, clearTabInvocations } from './invocations.js';
-import { handleNetworkRequest } from './network.js';
-async function waitUntilTabReady(tabId, timeout) {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-        const { tabs = [] } = await chrome.storage.local.get('tabs');
-        const tab = tabs.find((t) => t.tabId === tabId && t.portConnected);
-        if (tab)
-            return;
-        await new Promise((r) => setTimeout(r, 50));
-    }
-    throw new Error(`Timeout waiting for content script to connect in tab ${tabId}`);
-}
-export function handlePortMessage(port, tabId, portMapByTabId, requestToPortMap) {
-    port.onMessage.addListener(async (msg) => {
-        if (msg.type === 'HEARTBEAT') {
-            if (tabId != null) {
-                chrome.storage.local.get('tabs').then(({ tabs = [] }) => {
-                    const updated = tabs.map((t) => t.tabId === tabId ? { ...t, lastSeen: Date.now() } : t);
-                    chrome.storage.local.set({ tabs: updated });
-                });
+import { log, appendActivityLog } from './activityLog.js';
+import { verifiedInvocation, finishInvocation, clearTabInvocations, markInvocationReady } from './invocations.js';
+import { handleInvocationRequest } from './runtimeRequests.js';
+
+export function handlePortMessage(port, tabId, portMapByTabId) {
+    port.onMessage.addListener(async (message) => {
+        if (!message || typeof message !== 'object') return;
+        try {
+            if (message.type === 'HEARTBEAT') {
+                const { tabs = [] } = await chrome.storage.local.get('tabs');
+                await chrome.storage.local.set({ tabs: tabs.map((tab) => tab.tabId === tabId ? { ...tab, lastSeen: Date.now() } : tab) });
+                return;
             }
-            return;
-        }
-        log.dbg(`Port message received: type=${msg.type || 'unknown'}, tabId=${tabId ?? 'none'}, requestId=${msg.id || msg.requestId || 'none'}.`);
-        switch (msg.type) {
-            case 'NETWORK_REQUEST': {
-                const response = await handleNetworkRequest(msg, tabId);
-                try { port.postMessage(response); } catch { /* Navigation can close the invoking port. */ }
-                break;
+            if (message.type === 'LAMBDA_READY') {
+                markInvocationReady(message.invocationToken, tabId, port.sender.documentId);
+                return;
             }
-            case 'GET_SECRET_REQUEST':
-            case 'GET_STORAGE_REQUEST':
-            case 'SET_STORAGE_REQUEST': {
-                port.postMessage(await handleItemAccess(msg, tabId));
-                break;
+            const invocation = await verifiedInvocation(message.invocationToken, tabId);
+            if (!invocation || (invocation.documentId && invocation.documentId !== port.sender.documentId)) {
+                throw new Error('The calling function could not be verified or its access was revoked.');
             }
-            case 'EXECUTE_LAMBDA': {
-                const { tabId: targetTabId, userInput, requestId } = msg;
-                if (tabId != null) {
-                    portMapByTabId.set(tabId, port);
-                    requestToPortMap.set(requestId, { port, type: 'FUNCTION_CALL_REQUEST' });
-                }
-                let result;
-                try {
-                    const caller = await verifiedInvocation(msg.invocationToken, tabId);
-                    if (!caller) throw new Error('Nested execution blocked: the calling function could not be verified or its access was revoked.');
-                    result = await executeLambda(targetTabId ?? tabId, userInput, requestId, caller.callers.length, null, caller.callers);
-                }
-                catch (error) {
-                    result = { started: false, error: error?.message || String(error) };
-                }
-                if (result?.started === false) {
-                    const entry = requestToPortMap.get(requestId);
-                    if (entry) {
-                        entry.port.postMessage({
-                            type: 'FUNCTION_CALL_RESPONSE',
-                            id: requestId,
-                            value: undefined,
-                            error: result.error
-                        });
-                        requestToPortMap.delete(requestId);
-                    }
-                }
-                break;
-            }
-            case 'LAMBDA_RESULT': {
-                const { id, result } = msg;
-                if (!finishInvocation(msg.invocationToken, tabId, id, result)) break;
-                const entry = requestToPortMap.get(id);
-                if (entry) {
-                    const { port, type } = entry;
-                    const responseType = type === 'TAB_OPERATION_REQUEST' ? 'TAB_OPERATION_RESPONSE' : 'FUNCTION_CALL_RESPONSE';
-                    port.postMessage({
-                        type: responseType,
-                        id,
-                        value: result.return,
-                        error: result.error
-                    });
-                    requestToPortMap.delete(id);
-                }
-                else {
-                    await appendActivityLog('debug', [`Top-level function result completed: requestId=${id}.`], {
-                        tabId,
-                        uri: tabId == null ? '' : (await chrome.tabs.get(tabId).catch(() => null))?.url || ''
+            if (message.type === 'LAMBDA_RESULT') {
+                const finished = finishInvocation(message.invocationToken, tabId, invocation.requestId, message.result || {});
+                if (finished && invocation.callers.length === 1) {
+                    await appendActivityLog('debug', [`Top-level function result completed: requestId=${invocation.requestId}.`], {
+                        tabId, uri: port.sender.url || ''
                     });
                 }
-                break;
+                return;
             }
-            case 'TAB_OPERATION_REQUEST': {
-                const { id, operation, options } = msg;
-                if (id && tabId != null) {
-                    portMapByTabId.set(tabId, port);
-                    requestToPortMap.set(id, { port, type: 'TAB_OPERATION_REQUEST' });
-                }
-                switch (operation) {
-                    case 'CLOSE_CURRENT_TAB': {
-                        requestToPortMap.delete(id);
-                        try {
-                            if (!Number.isInteger(tabId) || !(await verifiedInvocation(msg.invocationToken, tabId))) {
-                                throw new Error('The calling tab or function could not be verified. Run the function again.');
-                            }
-                            await chrome.tabs.remove(tabId);
-                            // Closing the source tab also disconnects its response port.
-                        } catch (error) {
-                            try { port.postMessage({ type: 'TAB_OPERATION_RESPONSE', id, value: false, error: error.message }); }
-                            catch { /* The tab may already have disconnected. */ }
-                        }
-                        break;
-                    }
-                    case 'NEW_TAB': {
-                        const tab = await chrome.tabs.create({
-                            url: options.url ?? 'about:blank',
-                            active: options.active ?? false
-                        });
-                        const newTabId = tab.id;
-                        log.dbg(`Tab created for function request: tabId=${newTabId}, url="${options.url ?? 'about:blank'}", active=${options.active ?? false}.`);
-                        const { tabs = [] } = await chrome.storage.local.get('tabs');
-                        tabs.push({
-                            tabId: newTabId,
-                            portConnected: false,
-                            lastSeen: Date.now()
-                        });
-                        await chrome.storage.local.set({ tabs });
-                        // about:blank does not receive the extension content script, so
-                        // waiting for a port connection there leaves ctx.tabs.new()
-                        // unresolved even though the tab was created successfully.
-                        if ((options.url ?? 'about:blank') !== 'about:blank')
-                            await waitUntilTabReady(newTabId, 5000);
-                        const createdTab = await chrome.tabs.get(newTabId).catch(() => tab);
-                        port.postMessage({
-                            type: 'TAB_OPERATION_RESPONSE',
-                            id,
-                            value: {
-                                id: newTabId,
-                                // Chrome may report an empty URL before navigation commits.
-                                url: createdTab.url || createdTab.pendingUrl || options.url || 'about:blank',
-                                title: createdTab.title ?? ''
-                            }
-                        });
-                        break;
-                    }
-                    case 'FOCUS_TAB': {
-                        await chrome.tabs.update(options.tabId, { active: true });
-                        port.postMessage({ type: 'TAB_OPERATION_RESPONSE', id, value: true });
-                        break;
-                    }
-                    case 'CLOSE_TAB': {
-                        await chrome.tabs.remove(options.tabId);
-                        port.postMessage({ type: 'TAB_OPERATION_RESPONSE', id, value: true });
-                        break;
-                    }
-                    case 'GET_ALL_TABS': {
-                        const tabs = await chrome.tabs.query({});
-                        const simpleTabs = tabs.map((t) => ({
-                            id: t.id,
-                            url: t.url,
-                            title: t.title
-                        }));
-                        port.postMessage({ type: 'TAB_OPERATION_RESPONSE', id, value: simpleTabs });
-                        break;
-                    }
-                    default: {
-                        log.err(`Tab operation rejected: unsupported operation="${operation}" (requestId=${id}).`);
-                        port.postMessage({ type: 'TAB_OPERATION_RESPONSE', id, value: false });
-                    }
-                }
-                break;
-            }
+            const request = message.type === 'EXECUTE_LAMBDA'
+                ? { ...message, type: 'FUNCTION_CALL_REQUEST', id: message.requestId }
+                : message;
+            const response = await handleInvocationRequest(request, message.invocationToken, tabId);
+            if (response) port.postMessage(response);
+        } catch (error) {
+            log.err('Runtime request failed.', error?.message || String(error));
+            const type = message.type === 'EXECUTE_LAMBDA' ? 'FUNCTION_CALL_RESPONSE' : String(message.type).replace(/_REQUEST$/, '_RESPONSE');
+            try { port.postMessage({ type, id: message.id || message.requestId, error: error?.message || String(error) }); } catch {}
         }
     });
     port.onDisconnect.addListener(() => {
-        if (tabId != null) {
-            clearTabInvocations(tabId);
-            portMapByTabId.delete(tabId);
-            log.dbg(`Content-script port disconnected: tabId=${tabId}.`);
-        }
+        if (portMapByTabId.get(tabId) !== port) return;
+        clearTabInvocations(tabId);
+        portMapByTabId.delete(tabId);
+        log.dbg(`Content-script port disconnected: tabId=${tabId}.`);
     });
 }

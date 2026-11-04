@@ -12,7 +12,7 @@ test('revoking a project permission blocks the next request of an already-runnin
 	await worker.evaluate(async () => {
 		await chrome.storage.local.set({
 			local_storage_key_storage: JSON.stringify([{ id: 'live', key: 'live', value: 'UNCHANGED' }]),
-			local_storage_key_lambdas: JSON.stringify([{ id: 'live', project: 'live', name: 'live-permission', func: 'const before = await ctx.kv.get("live"); document.body.dataset.beforeRevocation = before; await new Promise(resolve => document.addEventListener("continue-permission-test", resolve, { once: true })); const saved = await ctx.kv.set("live", "CHANGED"); console.log(JSON.stringify({ saved }));' }])
+			local_storage_key_lambdas: JSON.stringify([{ id: 'live', project: 'live', name: 'live-permission', func: 'const before = await ctx.kv.get("live"); document.body.dataset.beforeRevocation = before; await new Promise(resolve => document.addEventListener("continue-permission-test", resolve, { once: true })); try { await ctx.kv.set("live", "CHANGED"); document.body.dataset.revocationRejected = "false"; } catch (error) { document.body.dataset.revocationRejected = String(/revoked|connection closed/.test(error.message)); }' }])
 		});
 	});
 	await page.goto(localTestPage);
@@ -20,8 +20,10 @@ test('revoking a project permission blocks the next request of an already-runnin
 	await expect(page.locator('body')).toHaveAttribute('data-before-revocation', 'UNCHANGED');
 	await worker.evaluate(() => chrome.storage.local.set({ local_storage_key_project_settings: { live: { functions: { userWorld: false } } } }));
 	await page.evaluate(() => document.dispatchEvent(new Event('continue-permission-test')));
-	await expect(output.filter({ hasText: '{"saved":false}' })).toHaveCount(1);
 	await expect(output.filter({ hasText: 'access was revoked' })).toHaveCount(1);
+	await expect(page.locator('body')).toHaveAttribute('data-revocation-rejected', 'true');
+	expect((await output.allTextContents()).join('\n')).not.toContain('{"saved":');
+	await expect.poll(() => worker.evaluate(async () => (await chrome.userScripts.getWorldConfigurations()).filter((world) => world.worldId?.startsWith('lambda-')).length)).toBe(0);
 	expect(await worker.evaluate(async () => JSON.parse((await chrome.storage.local.get('local_storage_key_storage')).local_storage_key_storage)[0].value)).toBe('UNCHANGED');
 });
 

@@ -112,7 +112,7 @@ for (const [name, code, reason] of [
 	]);
 	const worker = extensionContext.serviceWorkers()[0];
 	await page.goto(localTestPage);
-	await expect.poll(() => worker.evaluate(async () => (await chrome.storage.local.get('activityLogs')).activityLogs?.filter((entry) => entry.level === 'error').map((entry) => entry.message).join('\n') || '')).toContain(`Trigger execution failed:`);
+	await expect.poll(() => worker.evaluate(async () => (await chrome.storage.local.get('activityLogs')).activityLogs?.filter((entry) => entry.level === 'error').map((entry) => entry.message).join('\n') || ''), { timeout: 10_000 }).toContain(`Trigger execution failed:`);
 	const errors = await worker.evaluate(async () => (await chrome.storage.local.get('activityLogs')).activityLogs.filter((entry) => entry.level === 'error').map((entry) => entry.message).join('\n'));
 	expect(errors).toContain(reason);
 	await expect(page.locator('html')).not.toHaveAttribute('data-after-failure');

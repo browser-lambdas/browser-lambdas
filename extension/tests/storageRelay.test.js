@@ -2,85 +2,84 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
+import { content } from './helpers/contentHarness.js';
+import { credentials, flush } from './helpers/runtimeHarness.js';
 
-test('secure content relay overwrites forged execution worlds and invocation tokens', async () => {
-    const source = await readFile(new URL('../src/content/messages.js', import.meta.url), 'utf8');
-    for (const world of ['USER_SCRIPT_WORLD', 'MAIN_WORLD']) {
-        let runtimeListener, windowListener, responseListener, deliver;
-        const forwarded = [];
-        const window = { addEventListener: (type, listener) => { windowListener = listener; }, postMessage: () => {} };
-        const bgPort = {
-            onDisconnect: { addListener() {} }, onMessage: { addListener(listener) { responseListener = listener; } },
-            postMessage(msg) { forwarded.push(msg); responseListener({ type: msg.type.replace('_REQUEST', '_RESPONSE'), id: msg.id, value: true }); }
-        };
-        const sandbox = {
-            window, chrome: { runtime: { connect: () => bgPort, onMessage: { addListener(listener) { runtimeListener = listener; } }, sendMessage: (_msg, callback) => callback({ tabId: 1 }) } },
-            log: { dbg() {}, err() {} }, crypto: { randomUUID: () => 'id' },
-            setInterval() {}, clearInterval() {}, setTimeout() {}, clearTimeout() {},
-            createSecureChannel(options) { deliver = options.onMessage; return { ready: Promise.resolve(), send() {}, close() {} }; },
-            MessageChannel: class { constructor() { this.port1 = {}; this.port2 = {}; } }
-        };
-        vm.runInNewContext(source, sandbox);
-        runtimeListener({ type: 'BACKGROUND_INIT_HANDSHAKE', aToken: 'token', requestId: 'channel', invocationToken: 'trusted-invocation', executionWorld: world }, {}, () => {});
-        await windowListener({ source: window, data: { type: 'aToken', aToken: 'token' } });
-        for (const type of ['GET_SECRET_REQUEST', 'GET_STORAGE_REQUEST', 'SET_STORAGE_REQUEST']) {
-            await deliver({ type, id: type, key: 'key', invocationToken: 'forged-invocation', executionWorld: world === 'MAIN_WORLD' ? 'USER_SCRIPT_WORLD' : 'MAIN_WORLD' });
-            assert.equal(forwarded.at(-1).executionWorld, world);
-            assert.equal(forwarded.at(-1).invocationToken, 'trusted-invocation');
-            assert.equal(forwarded.at(-1).id, type);
-        }
-        await deliver({ type: 'FUNCTION_CALL_REQUEST', id: 'nested', userInput: 'helper', invocationToken: 'forged-invocation' });
-        assert.equal(forwarded.at(-1).type, 'EXECUTE_LAMBDA');
-        assert.equal(forwarded.at(-1).invocationToken, 'trusted-invocation');
-        await deliver({ type: 'LAMBDA_RESULT', id: 'forged-request', invocationToken: 'forged-invocation', result: { return: 1 } });
-        assert.equal(forwarded.at(-1).id, 'channel');
-        assert.equal(forwarded.at(-1).invocationToken, 'trusted-invocation');
+async function connect(instance, id = 'channel') {
+    const setup = { type: 'BACKGROUND_INIT_HANDSHAKE', ...credentials(id), invocationToken: `trusted-${id}`, executionWorld: 'MAIN_WORLD' };
+    await instance.fromBackground(setup);
+    await instance.fromWindow({ type: 'aToken', aToken: setup.aToken });
+    return setup;
+}
+
+test('MAIN relay accepts credentials only on its private Port and overwrites forged identity', async () => {
+    const instance = content({ respond: message => ({ type: message.type.replace('_REQUEST', '_RESPONSE'), value: true }) });
+    await instance.fromTab({ type: 'BACKGROUND_INIT_HANDSHAKE', ...credentials('public') });
+    assert.equal(instance.announcements.length, 0);
+    assert.equal(instance.state().handshakes, 0);
+    await connect(instance);
+    for (const type of ['GET_SECRET_REQUEST', 'GET_STORAGE_REQUEST', 'SET_STORAGE_REQUEST', 'NETWORK_REQUEST', 'MAIN_REQUEST']) {
+        await instance.deliver('channel', { type, id: type, key: 'key', invocationToken: 'forged', executionWorld: 'USER_SCRIPT_WORLD' });
+        assert.equal(instance.forwarded.at(-1).executionWorld, 'MAIN_WORLD');
+        assert.equal(instance.forwarded.at(-1).invocationToken, 'trusted-channel');
+        assert.equal(instance.forwarded.at(-1).id, type);
     }
+    await instance.deliver('channel', { type: 'FUNCTION_CALL_REQUEST', id: 'nested', userInput: 'helper', invocationToken: 'forged' });
+    assert.equal(instance.forwarded.at(-1).type, 'EXECUTE_LAMBDA');
+    assert.equal(instance.forwarded.at(-1).invocationToken, 'trusted-channel');
+    await instance.deliver('channel', { type: 'LAMBDA_RESULT', id: 'forged', result: { return: 1 } });
+    assert.equal(instance.forwarded.at(-1).id, 'channel');
+    assert.equal(instance.forwarded.at(-1).invocationToken, 'trusted-channel');
+    assert.equal(instance.channels.get('channel').closed, true);
 });
 
 test('shared persistence loads as a classic content script without eager module imports', async () => {
     const source = await readFile(new URL('../src/shared/storage.js', import.meta.url), 'utf8');
-    // No import callback: eager imports here would reject on ordinary web pages.
     vm.runInNewContext(source, { window: { innerWidth: 1000, innerHeight: 700 } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flush();
 });
 
-test('startup watchdog waits for authenticated runtime readiness and reports missing readiness', async () => {
-    const source = await readFile(new URL('../src/content/messages.js', import.meta.url), 'utf8');
-    for (const ready of [false, true]) {
-        let runtimeListener, windowListener, responseListener, deliver, closed = false;
-        let timerId = 0;
-        const timers = new Map();
-        const forwarded = [];
-        const window = { addEventListener: (_type, listener) => { windowListener = listener; }, postMessage() {} };
-        const bgPort = {
-            onDisconnect: { addListener() {} }, onMessage: { addListener(listener) { responseListener = listener; } },
-            postMessage(msg) { forwarded.push(msg); responseListener({ id: msg.id }); }
-        };
-        vm.runInNewContext(source, {
-            window, chrome: { runtime: { connect: () => bgPort, onMessage: { addListener(listener) { runtimeListener = listener; } }, sendMessage: (_msg, callback) => callback({ tabId: 1 }) } },
-            log: { dbg() {}, err() {} }, crypto: { randomUUID: () => 'id' },
-            setInterval() {}, clearInterval() {},
-            setTimeout(callback) { timers.set(++timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); },
-            createSecureChannel(options) { deliver = options.onMessage; return { ready: Promise.resolve(), send() {}, close() { closed = true; } }; },
-            MessageChannel: class { constructor() { this.port1 = {}; this.port2 = {}; } }
-        });
-        runtimeListener({ type: 'BACKGROUND_INIT_HANDSHAKE', aToken: 'token', requestId: 'channel', invocationToken: 'trusted-invocation' }, {}, () => {});
-        await windowListener({ source: window, data: { type: 'aToken', aToken: 'token' } });
-        assert.equal(timers.size, 1, 'authenticating the client must not cancel the readiness deadline');
+for (const ready of [false, true]) {
+    test(`MAIN startup deadline ${ready ? 'clears on readiness' : 'fails without readiness'}`, async () => {
+        const instance = content();
+        await connect(instance);
+        assert.equal(instance.time.timers.size, 1, 'key proof alone does not establish runtime readiness');
+        if (ready) await instance.deliver('channel', { type: 'LAMBDA_READY' });
+        await instance.time.advance(1000);
         if (ready) {
-            await deliver({ type: 'LAMBDA_READY' });
-            assert.equal(timers.size, 0);
-            assert.equal(closed, false);
-            assert.equal(forwarded.length, 0);
+            assert.equal(instance.channels.get('channel').closed, false);
+            assert.deepEqual(instance.forwarded.map(message => message.type), ['LAMBDA_READY']);
         } else {
-            [...timers.values()][0]();
-            const result = forwarded.at(-1);
+            const result = instance.forwarded.at(-1);
             assert.equal(result.type, 'LAMBDA_RESULT');
             assert.equal(result.id, 'channel');
-            assert.equal(result.invocationToken, 'trusted-invocation');
+            assert.equal(result.invocationToken, 'trusted-channel');
             assert.match(result.result.error, /runtime connection/);
-            assert.equal(closed, true);
+            assert.equal(instance.channels.get('channel').closed, true);
+            instance.channels.get('channel').options.onError(new Error('late failure'));
+            assert.equal(instance.forwarded.filter(message => message.type === 'LAMBDA_RESULT').length, 1);
         }
+        assert.equal(instance.time.timers.size, 0);
+    });
+}
+
+test('finishing one MAIN invocation cancels only its pending work; Port loss cleans the rest', async () => {
+    const instance = content();
+    for (const id of ['one', 'two']) {
+        await connect(instance, id);
+        await instance.deliver(id, { type: 'LAMBDA_READY' });
     }
+    const pending = instance.deliver('one', { type: 'GET_STORAGE_REQUEST', id: 'pending' });
+    await instance.deliver('one', { type: 'TAB_OPERATION_REQUEST', id: 'tab', operation: 'NEW_TAB' });
+    assert.equal(instance.state().pending, 1);
+    await instance.fromBackground({ type: 'RUNTIME_FINISHED', requestId: 'one', error: 'Access revoked' });
+    await pending;
+    assert.equal(instance.channels.get('one').closed, true);
+    assert.deepEqual(instance.channels.get('one').messages, [{ type: 'RUNTIME_CLOSED', error: 'Access revoked' }]);
+    assert.equal(instance.channels.get('two').closed, false);
+    assert.deepEqual({ ...instance.state() }, { channels: 1, handshakes: 1, requests: 0, pending: 0 });
+    await instance.disconnect();
+    assert.equal(instance.channels.get('two').closed, true);
+    assert.deepEqual({ ...instance.state() }, { channels: 0, handshakes: 0, requests: 0, pending: 0 });
+    assert.equal(instance.time.timers.size, 0);
 });

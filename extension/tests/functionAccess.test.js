@@ -1,26 +1,16 @@
+import { backgroundBrowser } from './helpers/backgroundBrowser.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { executeLambda } from '../src/background/executeLambda.js';
 import { runTriggers } from '../src/background/runTriggers.js';
 import { applyFunctionCodeUpdate } from '../src/shared/functionUpdates.js';
-import { finishInvocation, clearTabInvocations } from '../src/background/invocations.js';
 
 let db, injected, handshakes;
 const lambda = (extra = {}) => ({ id: 'f', name: 'test', func: 'console.log("PRIVATE_CODE");', allowedWorlds: ['user_scripts'], urlAllowlistEnabled: true, urlPatterns: ['https://example.com/*'], ...extra });
 function setup(lambdas = [lambda()]) {
-    clearTabInvocations(1);
-    clearTabInvocations(2);
-    db = { local_storage_key_lambdas: JSON.stringify(lambdas) };
-    injected = []; handshakes = [];
-    globalThis.chrome = {
-        storage: { local: { get: async (key) => ({ [key]: db[key] }), set: async (value) => Object.assign(db, value) } },
-        tabs: { get: async (id) => ({ url: id === 1 ? 'https://example.com/page' : 'https://other.test/' }), sendMessage: async (tabId, context) => {
-            handshakes.push([tabId, context]);
-            finishInvocation(context.invocationToken, tabId, context.requestId);
-        } },
-        scripting: { executeScript: async (args) => { injected.push(args); return [{}]; } },
-        userScripts: { execute: async (args) => { injected.push(args); return [{}]; } }
-    };
+    const browser = backgroundBrowser(lambdas);
+    db = browser.db; injected = browser.injections; handshakes = browser.handshakes;
+    return browser;
 }
 
 test('function authorization precedes injection and handshake for every world/page combination', async () => {
@@ -36,7 +26,8 @@ test('function authorization precedes injection and handshake for every world/pa
                         const result = await executeLambda(tabId, `${prefix}test`, 'request');
                         assert.equal(result?.started !== false, allowed);
                         assert.equal(injected.length, allowed ? 1 : 0);
-                        assert.equal(handshakes.length, allowed ? 1 : 0);
+                        assert.equal(handshakes.length, allowed && main ? 1 : 0);
+                        if (allowed) assert.deepEqual(injected[0].target, { tabId, documentIds: [`doc-${tabId}`] });
                         if (allowed) assert.equal(injected[0].world, main ? 'MAIN' : 'USER_SCRIPT');
                         else assert.doesNotMatch(result.error, /PRIVATE_CODE/);
                     }

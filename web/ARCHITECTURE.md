@@ -10,6 +10,7 @@ The website teaches Browser Lambdas and lets visitors try curated lambdas withou
 | `styles.css` | Documentation layout and visual style |
 | `script.js` | Category navigation, table of contents, URL history and llms.txt viewer |
 | `highlight.js` | Small tokenizer and presentation of code examples |
+| `handshake.js` | Dependency-free, step-by-step security communication figures |
 | `demo.js` | Website adapter for the shared shell and curated command execution |
 | `build.sh`, `llms.template.txt` | Shared-code generation and documentation exports |
 
@@ -28,6 +29,8 @@ The HTML extractor supports the site's existing markup conventions rather than a
 The llms.txt viewer first fetches the text file. If fetching fails, including when opening local files, it falls back to generated `window.LLMS_TEXT`. If neither is available, it shows an error. Clipboard failures also produce a visible status.
 
 `highlight.js` preserves example text while adding syntax spans. It is a lightweight tokenizer, not a language parser; unsupported syntax remains plain text.
+
+The Security article includes two static HTML/CSS diagrams showing extension-page and iframe isolation. Four step-by-step communication figures remain in `handshake.js`, but its script inclusion is commented out and their containers stay hidden. The static diagrams require no renderer. Both kinds of figure are excluded from text exports; the surrounding prose is exported.
 
 ## Demo execution
 

@@ -13,7 +13,7 @@ test('an already-running function cannot read a secret after its project permiss
 	await worker.evaluate(async () => {
 		await chrome.storage.local.set({
 			local_storage_key_secrets: JSON.stringify([{ id: 'live-secret', key: 'live-secret', value: 'PRIVATE_VALUE' }]),
-			local_storage_key_lambdas: JSON.stringify([{ id: 'live', project: 'live', name: 'live-secret', func: 'const before = await ctx.secrets.get("live-secret"); document.body.dataset.secretReadStarted = String(before !== null); await new Promise(resolve => document.addEventListener("continue-secret-test", resolve, { once: true })); console.log(JSON.stringify({ after: await ctx.secrets.get("live-secret") }));' }])
+			local_storage_key_lambdas: JSON.stringify([{ id: 'live', project: 'live', name: 'live-secret', func: 'const before = await ctx.secrets.get("live-secret"); document.body.dataset.secretReadStarted = String(before !== null); await new Promise(resolve => document.addEventListener("continue-secret-test", resolve, { once: true })); try { await ctx.secrets.get("live-secret"); document.body.dataset.revocationRejected = "false"; } catch (error) { document.body.dataset.revocationRejected = String(/revoked|connection closed/.test(error.message)); }' }])
 		});
 	});
 	await page.goto(localTestPage);
@@ -21,8 +21,10 @@ test('an already-running function cannot read a secret after its project permiss
 	await expect(page.locator('body')).toHaveAttribute('data-secret-read-started', 'true');
 	await worker.evaluate(() => chrome.storage.local.set({ local_storage_key_project_settings: { live: { functions: { userWorld: false } } } }));
 	await page.evaluate(() => document.dispatchEvent(new Event('continue-secret-test')));
-	await expect(output.filter({ hasText: '{"after":null}' })).toHaveCount(1);
 	await expect(output.filter({ hasText: 'access was revoked' })).toHaveCount(1);
+	await expect(page.locator('body')).toHaveAttribute('data-revocation-rejected', 'true');
+	expect((await output.allTextContents()).join('\n')).not.toContain('{"after":');
+	await expect.poll(() => worker.evaluate(async () => (await chrome.userScripts.getWorldConfigurations()).filter((world) => world.worldId?.startsWith('lambda-')).length)).toBe(0);
 	expect((await output.allTextContents()).join('\n')).not.toContain('PRIVATE_VALUE');
 	expect(await worker.evaluate(async () => ((await chrome.storage.local.get('activityLogs')).activityLogs || []).some((entry) => entry.message.includes('PRIVATE_VALUE')))).toBe(false);
 });

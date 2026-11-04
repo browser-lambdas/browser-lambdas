@@ -15,8 +15,8 @@ test('category navigation, deep links, history and responsive layout', async () 
 			demo: ['Demo', 'Preloaded functions', 'hello', 'vi-nav'],
 			intro: ['Hack your browsing', 'How It Works'],
 			'quick-start': ['Hello world', 'Whats next?'],
-			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Run', 'Chain', 'Tabs', 'Network'],
-			security: ['Security', 'Approach', 'Bad Pages', 'Execution Worlds', 'Securing communication paths', 'baah CLI'],
+			ctx: ['Overview', 'Args', 'kv', 'Secrets', 'Main', 'Run', 'Chain', 'Tabs', 'Network'],
+			security: ['Security', 'Threat Model', 'UI Elements', 'Function injection', 'Trigger automations', 'Baah'],
 			baah: ['baah', 'Connections', 'Commands', 'baah init .', 'baah set', 'baah push', 'baah ls', 'baah info', 'baah rm', 'baah.toml'],
 		};
 		async function check(category) {
@@ -73,6 +73,11 @@ test('category navigation, deep links, history and responsive layout', async () 
 		await check('ctx');
 		await page.reload();
 		await check('ctx');
+		for (const anchor of ['main', 'ctxmaingetpath', 'ctxmaincallpath-args', 'ctxmainruncallback-arg']) {
+			await page.goto(`${url}#${anchor}`);
+			await check('ctx');
+			assert.equal(await page.locator(`#${anchor}`).isVisible(), true);
+		}
 		await page.goto(`${url}#network`);
 		await check('ctx');
 		await page.screenshot({ path: '/private/tmp/browser-lambdas-network-docs-desktop.png' });
@@ -110,6 +115,47 @@ test('category navigation, deep links, history and responsive layout', async () 
 		});
 		assert.ok(await page.locator('.docs-nav').evaluate(el => el.getBoundingClientRect().bottom < 0));
 		await page.screenshot({ path: '/private/tmp/browser-lambdas-mobile-scrolled.png' });
+	} finally {
+		await browser.close();
+	}
+});
+
+test('Security shows static isolation diagrams with step animations disabled', async () => {
+	const browser = await chromium.launch({ headless: true });
+	try {
+		const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+		const errors = [], animationRequests = [];
+		page.on('pageerror', error => errors.push(error.message));
+		page.on('request', request => {
+			if (new URL(request.url()).pathname.endsWith('/handshake.js')) animationRequests.push(request.url());
+		});
+		await page.route('https://fonts.googleapis.com/**', route => route.abort());
+		await page.goto(`${pathToFileURL(resolve(__dirname, 'index.html')).href}#security-menu`);
+		const figures = page.locator('.security-isolation');
+		assert.equal(await figures.count(), 2);
+		for (const figure of await figures.all()) {
+			assert.equal(await figure.isVisible(), true);
+			const captionId = await figure.getAttribute('aria-labelledby');
+			assert.ok(await page.locator(`#${captionId}`).textContent());
+			assert.ok(await figure.getByRole('img').getAttribute('aria-label'));
+			assert.equal(await figure.locator('button, select').count(), 0);
+			assert.equal(await figure.evaluate(element => element.getAnimations({ subtree: true }).length), 0);
+		}
+		assert.equal(await page.locator('[data-flow]:visible').count(), 0);
+		assert.deepEqual(animationRequests, []);
+		for (const width of [320, 390]) {
+			await page.setViewportSize({ width, height: 844 });
+			for (const figure of await figures.all()) {
+				await figure.scrollIntoViewIfNeeded();
+				assert.equal(await figure.evaluate(element => {
+					const bounds = element.getBoundingClientRect();
+					return bounds.left >= 0 && bounds.right <= innerWidth && element.scrollWidth <= element.clientWidth;
+				}), true);
+			}
+			assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+		}
+		await figures.last().screenshot({ path: '/private/tmp/browser-lambdas-security-final-mobile.png' });
+		assert.deepEqual(errors, []);
 	} finally {
 		await browser.close();
 	}
