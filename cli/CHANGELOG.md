@@ -1,3 +1,11 @@
+### 0.2.2
+
+- Update deps
+
+### 0.2.1
+
+- Update deps
+
 ## 0.2.0
 
 - Breaking: move port from ls into new baah info
