@@ -1,6 +1,6 @@
 ### 0.2.2
 
-- Bump deps
+- Update deps
 
 ### 0.2.1
 
