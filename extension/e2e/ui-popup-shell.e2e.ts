@@ -1,4 +1,6 @@
 import { test, expect } from './fixtures';
+import { chromium } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 
 // Ensure tests have enough time to build extension and run
 test.describe.configure({ timeout: 120_000 });
@@ -409,3 +411,41 @@ test('shell bounds are isolated per page and settings controls do not jump', asy
 });
 
 export default test;
+
+
+test('local docs release the demo shortcut and open an authenticated real Terminal', async ({ headless }) => {
+	const build = fileURLToPath(new URL('../build/', import.meta.url));
+	const context = await chromium.launchPersistentContext('', {
+		headless: false,
+		args: [...(headless ? ['--headless=new'] : []), `--disable-extensions-except=${build}`, `--load-extension=${build}`]
+	});
+	try {
+		const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+		const extensionId = worker.url().split('/')[2];
+		const permissions = await context.newPage();
+		await permissions.goto(`chrome://extensions/?id=${extensionId}`);
+		await permissions.evaluate(id => chrome.developerPrivate.updateExtensionConfiguration({ extensionId: id, fileAccess: true }), extensionId);
+		await permissions.close();
+		const page = await context.newPage();
+		await page.goto(new URL('../../web/index.html#category-demo', import.meta.url).href);
+		await page.bringToFront();
+		await page.keyboard.press('Meta+k');
+		const demo = page.locator('#demo-shell-input');
+		await expect(demo).toBeVisible();
+		await demo.fill('deactivate');
+		await demo.press('Enter');
+		await expect(page.locator('#browser-lambdas-demo-terminal')).toHaveCount(0);
+		await page.keyboard.press('Meta+k');
+		const input = page.frameLocator('#browser-lambdas-shell').locator('#shell-input');
+		await expect(input).toBeVisible();
+		await input.fill('still connected');
+		await input.press('Escape');
+		await expect(page.locator('iframe#browser-lambdas-shell')).toHaveCount(0);
+		const popup = await openMenu(page, extensionId);
+		try {
+			await page.frameLocator('#browser-lambdas-popup-menu-host').locator('[data-action="shell"]').click();
+			await expect(input).toBeVisible();
+			await input.fill('opened from the file-page menu');
+		} finally { await popup.close(); }
+	} finally { await context.close(); }
+});

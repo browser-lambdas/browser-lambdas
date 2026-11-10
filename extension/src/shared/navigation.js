@@ -30,25 +30,16 @@ function renderAppNav({ activeTab = '', settingsActive = false } = {}) {
 
   const labels = { functions: 'Functions', storage: 'K-V', triggers: 'Triggers', secrets: 'Secrets', styles: 'Styles', activity: 'Activity' };
   const links = [
-    { label: 'Home', icon: '<img src="./assets/logo-clean.png" alt="" />', localDocs: true, href: 'file:///Users/jh/dev/browser-lambdas/web/index.html' },
+    { label: 'Home', icon: '<img src="./assets/logo-clean.png" alt="" />', home: true, href: 'https://browser-lambdas.dev/' },
     ...APP_NAV_TABS.map((tab) => ({ label: labels[tab], href: `workspace.html#${tab}`, tab, icon: lucideIcon(APP_CATEGORY_ICONS[tab]) }))
   ];
 
   return `<nav class="app-nav" aria-label="Primary navigation">
     <div class="nav-top">
-      ${links.map((item) => item.localDocs
-        ? `<a class="nav-item nav-brand" href="${item.href}" data-local-docs target="_blank" rel="noopener" aria-label="${item.label}" title="Open local documentation"><span class="nav-icon">${item.icon}</span></a>`
+      ${links.map((item) => item.home
+        ? `<a class="nav-item nav-brand" href="${item.href}" target="_blank" rel="noopener" aria-label="${item.label}" title="Open browser-lambdas.dev"><span class="nav-icon">${item.icon}</span></a>`
         : `<a class="nav-item ${item.tab === activeTab ? 'active' : ''}" href="${item.href}" data-nav-tab="${item.tab || ''}" aria-label="${item.label}"><span class="nav-icon">${item.icon}</span><span>${item.label}</span></a>`).join('')}
     </div>
     <a class="nav-item ${settingsActive ? 'active' : ''}" href="settings.html" aria-label="Settings"><span class="nav-icon">${lucideIcon('settings')}</span><span>Settings</span></a>
   </nav>`;
 }
-
-// Temporary development link: use the tabs API to open the local documentation
-// file, since ordinary extension-page navigation to file URLs may be blocked.
-document.addEventListener('click', (event) => {
-  const link = event.target.closest('[data-local-docs]');
-  if (!link || !chrome.tabs?.create) return;
-  event.preventDefault();
-  chrome.tabs.create({ url: link.href, active: !event.ctrlKey && !event.metaKey });
-});

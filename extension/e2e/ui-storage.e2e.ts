@@ -151,8 +151,11 @@ test('storage policies preserve JSON values, validate patterns and show safe usa
 	await expect(page.getByTestId('pane-value')).toHaveValue(JSON.stringify({ nested: [false, 0, null] }, null, 2));
 	await expect(page.locator('.storage-code-box .code-highlight')).toContainText('nested');
 	await expect(page.locator('.storage-code-box .line-numbers span')).toHaveCount(7);
-	await expect(page.locator('[data-usage-for]')).toHaveAttribute('rows', '5');
-	await expect(page.locator('[data-usage-for]')).toHaveValue('# get value\nconst value = await ctx.kv.get("a\\"\\\\key");\n\n# set value\nawait ctx.kv.set("a\\"\\\\key", "new value");');
+	await page.locator('.usage-help summary').click();
+	await expect(page.locator('.usage-example pre')).toHaveText([
+		`const value = await ctx.kv.get(${JSON.stringify('a"\\key')});`,
+		`await ctx.kv.set(${JSON.stringify('a"\\key')}, "new value");`
+	]);
 	await expect(page.getByTestId('storage-url-allowlist')).not.toBeChecked();
 	await page.getByTestId('storage-url-allowlist').check();
 	await page.getByTestId('storage-url-patterns').fill('/[/');

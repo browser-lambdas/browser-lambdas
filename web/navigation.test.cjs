@@ -4,6 +4,35 @@ const { pathToFileURL } = require('node:url');
 const { resolve } = require('node:path');
 const { chromium } = require('../extension/node_modules/playwright');
 
+test('ctx surface covers documented methods with plain links that underline on hover', async () => {
+	const browser = await chromium.launch({ headless: true });
+	try {
+		const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+		await page.route('https://fonts.googleapis.com/**', route => route.abort());
+		await page.goto(`${pathToFileURL(resolve(__dirname, 'index.html')).href}#category-ctx`);
+		const table = page.locator('.ctx-surface');
+		const links = await table.locator('a').evaluateAll(els => els.map(el => el.getAttribute('href')));
+		const methods = await page.locator('#category-ctx h3[id]').evaluateAll(els => els.map(el => `#${el.id}`));
+		for (const anchor of [...methods, '#chain']) assert.ok(links.includes(anchor), anchor);
+		assert.equal(await table.locator('code').count(), await table.locator('a > code').count());
+		const first = table.locator('a').first();
+		const style = () => first.evaluate(el => getComputedStyle(el).textDecorationLine);
+		await page.mouse.move(0, 0);
+		assert.equal(await style(), 'none');
+		await first.hover();
+		assert.equal(await style(), 'underline');
+		await page.mouse.move(0, 0);
+		assert.equal(await style(), 'none');
+		for (const anchor of links) {
+			await table.locator(`a[href="${anchor}"]`).click();
+			assert.equal(await page.evaluate(() => location.hash), anchor);
+			assert.equal(await page.locator(anchor).isVisible(), true);
+		}
+	} finally {
+		await browser.close();
+	}
+});
+
 test('category navigation, deep links, history and responsive layout', async () => {
 	const browser = await chromium.launch({ headless: true });
 	try {

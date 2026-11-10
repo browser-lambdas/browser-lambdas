@@ -22,7 +22,9 @@ export function handleUiSession(message, sender, sendResponse) {
         generateSessionKey().then((sessionKey) => {
             const id = crypto.randomUUID();
             const token = crypto.randomUUID();
-            sessions.set(id, { surface, tabId, token, sessionKey, parentOrigin: url.origin, documentId: sender.documentId });
+            // File-page postMessage events use an opaque origin, even when URL.origin is file://.
+            const parentOrigin = url.protocol === 'file:' ? 'null' : url.origin;
+            sessions.set(id, { surface, tabId, token, sessionKey, parentOrigin, documentId: sender.documentId });
             setTimeout(() => sessions.delete(id), 3000);
             sendResponse({ id, token, sessionKey });
         }).catch(() => sendResponse({ error: 'The encrypted interface session could not be created.' }));

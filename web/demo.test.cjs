@@ -36,6 +36,11 @@ test('shared demo terminal runs hello throughout the docs', async () => {
 		await page.keyboard.press('Control+k');
 		await page.getByRole('button', { name: 'I lost my keys', exact: true }).click();
 		assert.equal(await shell.count(), 1);
+		assert.deepEqual(await page.locator('#demo-shell-outputs p').allTextContents(), [
+			'// This is a mock demo terminal.',
+			'// If you already installed the extension,',
+			'// type "deactivate" to turn this demo off.',
+		]);
 		assert.equal(await page.locator('#browser-lambdas-shell').count(), 1);
 		assert.equal(await page.evaluate(() => extensionShortcutCalls), 0);
 		const initial = await shell.boundingBox();
@@ -96,6 +101,65 @@ test('shared demo terminal runs hello throughout the docs', async () => {
 		const bounds = await page.locator('#browser-lambdas-demo-terminal').boundingBox();
 		assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390);
 		assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 844);
+		assert.deepEqual(errors, []);
+	} finally { await browser.close(); }
+});
+
+test('deactivation releases the shortcut, survives reload and preserves the extension shell', async () => {
+	const browser = await chromium.launch({ headless: true });
+	try {
+		const page = await browser.newPage();
+		const errors = [];
+		page.on('pageerror', error => errors.push(error.message));
+		await page.addInitScript(() => {
+			window.extensionShortcutCalls = 0;
+			document.addEventListener('keydown', event => {
+				if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') window.extensionShortcutCalls++;
+			});
+			document.addEventListener('DOMContentLoaded', () => {
+				const shell = document.createElement('div');
+				shell.id = 'browser-lambdas-shell';
+				document.body.append(shell);
+			});
+		});
+		await page.goto(pathToFileURL(resolve(__dirname, 'index.html')).href + '#category-demo');
+		const input = page.getByRole('textbox', { name: 'Demo command' });
+		const demo = page.locator('#browser-lambdas-demo-terminal');
+		const button = page.getByRole('button', { name: 'I lost my keys', exact: true });
+		await page.keyboard.press('Control+k');
+		await input.fill('deactivate');
+		await input.press('Enter');
+		await demo.waitFor({ state: 'detached' });
+		assert.equal(await page.locator('#browser-lambdas-shell').count(), 1);
+		assert.equal(await page.evaluate(() => localStorage.getItem('browser-lambdas-demo-disabled')), 'true');
+		await page.keyboard.press('Control+k');
+		await page.keyboard.press('Meta+k');
+		assert.equal(await page.evaluate(() => extensionShortcutCalls), 2);
+		assert.equal(await demo.count(), 0);
+
+		await page.reload();
+		await page.keyboard.press('Meta+k');
+		assert.equal(await demo.count(), 0);
+		assert.equal(await page.evaluate(() => extensionShortcutCalls), 1);
+		await button.click();
+		await input.waitFor();
+		assert.equal(await page.evaluate(() => localStorage.getItem('browser-lambdas-demo-disabled')), null);
+		assert.equal(await page.locator('#demo-shell-outputs p').first().textContent(), '// This is a mock demo terminal.');
+		await page.evaluate(() => window.dispatchEvent(new Event('browser-lambdas-deactivate-demo')));
+		await demo.waitFor({ state: 'detached' });
+		await page.keyboard.press('Control+k');
+		assert.equal(await page.evaluate(() => extensionShortcutCalls), 2);
+		assert.equal(await page.locator('#browser-lambdas-shell').count(), 1);
+
+		// A denied preference write still releases the shortcut for this visit.
+		await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('Storage unavailable'); }; });
+		await button.click();
+		await input.fill('deactivate');
+		await input.press('Enter');
+		await demo.waitFor({ state: 'detached' });
+		await page.keyboard.press('Meta+k');
+		assert.equal(await page.evaluate(() => extensionShortcutCalls), 3);
+		assert.equal(await demo.count(), 0);
 		assert.deepEqual(errors, []);
 	} finally { await browser.close(); }
 });

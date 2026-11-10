@@ -51,7 +51,7 @@ export const test = base.extend<
 	rebuildExtension: [false, { option: true, scope: 'worker' }],
 	headless: [process.env.HEADLESS === '1', { scope: 'worker' }],
 	reactionTime: [
-		process.env.REACTION_TIME ? parseInt(process.env.REACTION_TIME, 10) : 500,
+		process.env.REACTION_TIME ? parseInt(process.env.REACTION_TIME, 10) : 100,
 		{ option: true, scope: 'worker' }
 	],
 
