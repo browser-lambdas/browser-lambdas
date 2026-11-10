@@ -1,3 +1,7 @@
+## 0.7.0
+
+- Added simple tutorial quiz
+
 ## 0.6.0
 
 - Update injection method and add ctx.main API
