@@ -1381,12 +1381,6 @@ window.addEventListener('hashchange', () => {
 (async () => {
   state.tab = currentTabFromHash();
   state.tutorialStatus = (await chrome.storage.local.get(TUTORIAL_STATUS_KEY))[TUTORIAL_STATUS_KEY] ?? null;
-  if (state.tutorialStatus === 'created') {
-    try {
-      const result = await chrome.runtime.sendMessage({ type: 'WORKSPACE_UPDATE_TUTORIAL' });
-      if (!result?.success) state.notice = result?.error || 'The tutorial could not be updated. Reload to try again.';
-    } catch { state.notice = 'The tutorial could not be updated. Reload to try again.'; }
-  }
   state.baahPollChanges = await getBaahPollChanges();
   state.baahRequireReview = await getBaahRequireReview();
   syncBaahPolling();

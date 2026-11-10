@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createTutorial, updateTutorial } from '../src/background/tutorial.js';
-import { tutorialResources, TUTORIAL_STATUS_KEY, TUTORIAL_VERSION_KEY, TUTORIAL_VERSION, TUTORIAL_PROJECT } from '../src/shared/tutorial.js';
+import { createTutorial } from '../src/background/tutorial.js';
+import { tutorialResources, TUTORIAL_STATUS_KEY, TUTORIAL_PROJECT } from '../src/shared/tutorial.js';
 
 const keys = {
     lambdas: 'local_storage_key_lambdas', storage: 'local_storage_key_storage',
     secrets: 'local_storage_key_secrets', triggers: 'local_storage_key_triggers',
-    styles: 'local_storage_key_shellcss', archive: 'local_storage_key_tutorial_archive'
+    styles: 'local_storage_key_shellcss'
 };
 const clone = value => structuredClone(value);
 function setup(t, initial = {}) {
@@ -24,10 +24,6 @@ function setup(t, initial = {}) {
     t.after(() => { globalThis.chrome = previous; });
     return { state, items: name => JSON.parse(state[keys[name]] ?? '[]'), writes: () => writes, fail: value => { failWrite = value; } };
 }
-function installed(version, extra = {}) {
-    return { [TUTORIAL_STATUS_KEY]: 'created', [TUTORIAL_VERSION_KEY]: version, ...extra };
-}
-
 test('tutorial is opt-in and creation preserves existing resources and safe permissions', async t => {
     const existing = { id: 'existing', name: 'personal', project: 'other', func: 'user code' };
     const settings = { other: { functions: { userWorld: false } } };
@@ -36,7 +32,6 @@ test('tutorial is opt-in and creation preserves existing resources and safe perm
         local_storage_key_project_settings: settings,
         local_storage_key_allow_main_world_functions: false
     });
-    await updateTutorial();
     assert.equal(store.writes(), 0);
     const outcomes = await Promise.allSettled([createTutorial(), createTutorial()]);
     assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
@@ -56,7 +51,6 @@ test('tutorial is opt-in and creation preserves existing resources and safe perm
         assert.equal(item.projectsEnabled, true);
         assert.deepEqual(item.allowedProjects, [TUTORIAL_PROJECT]);
     }
-    await updateTutorial();
     assert.equal(store.writes(), 1);
 });
 
@@ -90,86 +84,6 @@ test('invalid records and failed creation preserve data and leave the mutation q
         assert.deepEqual(store.state, {});
         store.fail(false);
         assert.equal((await createTutorial()).success, true);
-        assert.equal(store.writes(), 1);
-    });
-});
-
-test('legacy upgrade archives edited hunt records and preserves unrelated resources and demo choices', async t => {
-    const old = { id: 'old', name: 'check-site', project: TUTORIAL_PROJECT, func: 'edited hunt body', allowedWorlds: [] };
-    const demo = { id: 'demo', name: 'deactivate-demo', project: TUTORIAL_PROJECT, func: 'custom demo helper', allowedWorlds: [] };
-    const unrelated = { id: 'other', name: 'check-site', project: 'other', func: 'unrelated' };
-    const oldStorage = { id: 'visits', key: 'tutorial-visited', value: ['https://browser-lambdas.dev/#args'] };
-    const oldSecret = { id: 'location', key: 'tutorial-location', value: 'private location' };
-    const oldTrigger = { id: 'auto', name: 'auto-check', project: TUTORIAL_PROJECT, commands: ['check-site'], enabled: true };
-    const demoTrigger = { id: 'demo-trigger', name: 'deactivate-demo', project: TUTORIAL_PROJECT, commands: ['deactivate-demo'], enabled: false };
-    const store = setup(t, installed(3, {
-        [keys.lambdas]: JSON.stringify([old, demo, unrelated]), [keys.storage]: JSON.stringify([oldStorage]),
-        [keys.secrets]: JSON.stringify([oldSecret]), [keys.triggers]: JSON.stringify([oldTrigger, demoTrigger])
-    }));
-    await updateTutorial();
-    assert.deepEqual(store.items('lambdas').find(item => item.id === demo.id), demo);
-    assert.deepEqual(store.items('lambdas').find(item => item.id === unrelated.id), unrelated);
-    assert.deepEqual(store.items('triggers'), [demoTrigger]);
-    assert.deepEqual(store.state[keys.archive], [{ version: 3, lambdas: [old], triggers: [oldTrigger], storage: [oldStorage], secrets: [oldSecret] }]);
-    assert.deepEqual(store.items('storage').map(item => [item.key, item.value]), [['tutorial-progress', null]]);
-    assert.equal(store.items('secrets').length, 3);
-    const saved = clone(store.state);
-    await updateTutorial();
-    assert.deepEqual(store.state, saved);
-    assert.equal(store.writes(), 1);
-});
-
-test('quiz upgrade moves answers into secrets while keeping progress and function policies', async t => {
-    const answer = { id: 'answer', name: 'answer', project: TUTORIAL_PROJECT, func: 'edited answer body', allowedWorlds: [], urlAllowlistEnabled: true, urlPatterns: ['https://browser-lambdas.dev/#args'] };
-    const progress = { id: 'progress', key: 'tutorial-progress', value: 2, allowedWorlds: [] };
-    const store = setup(t, installed(4, { [keys.lambdas]: JSON.stringify([answer]), [keys.storage]: JSON.stringify([progress]) }));
-    await updateTutorial();
-    const updated = store.items('lambdas')[0];
-    assert.deepEqual({ ...updated, func: answer.func }, answer);
-    assert.ok(updated.func.includes('ctx.secrets.get('));
-    assert.deepEqual(store.items('storage'), [progress]);
-    assert.deepEqual(store.state[keys.archive], [{ version: 4, lambdas: [answer] }]);
-    assert.deepEqual(store.items('secrets').map(item => item.value), ['ctx.kv.get()', 'baah', 'llms.txt']);
-});
-
-test('quiz upgrade conflicts and failed writes preserve progress and the previous answer function', async t => {
-    const initial = installed(4, {
-        [keys.lambdas]: JSON.stringify([{ id: 'answer', name: 'answer', project: TUTORIAL_PROJECT, func: 'old body' }]),
-        [keys.storage]: JSON.stringify([{ id: 'progress', key: 'tutorial-progress', value: 1 }])
-    });
-    await t.test('secret key collision', async t => {
-        const saved = { ...initial, [keys.secrets]: JSON.stringify([{ id: 'mine', key: 'tutorial-answer-1', value: 'custom' }]) };
-        const store = setup(t, saved);
-        await assert.rejects(updateTutorial(), /already in use/);
-        assert.deepEqual(store.state, saved);
-    });
-    await t.test('storage failure', async t => {
-        const store = setup(t, initial);
-        store.fail(true);
-        await assert.rejects(updateTutorial(), /Storage unavailable/);
-        assert.deepEqual(store.state, initial);
-        store.fail(false);
-        await updateTutorial();
-        assert.equal(store.state[TUTORIAL_VERSION_KEY], TUTORIAL_VERSION);
-        assert.equal(store.items('storage')[0].value, 1);
-    });
-});
-
-test('first-answer update changes only the untouched default and never resets quiz progress', async t => {
-    for (const value of ['ctx.kv', 'custom answer']) await t.test(value, async t => {
-        const original = { id: 'answer-secret', key: 'tutorial-answer-1', value, allowedWorlds: [] };
-        const initial = installed(5, {
-            [keys.secrets]: JSON.stringify([original]), [keys.storage]: JSON.stringify([{ id: 'progress', key: 'tutorial-progress', value: 2 }]),
-            [keys.lambdas]: JSON.stringify([{ id: 'answer', name: 'answer', project: TUTORIAL_PROJECT, func: 'custom body' }])
-        });
-        const store = setup(t, initial);
-        await updateTutorial();
-        assert.deepEqual(store.items('secrets'), [{ ...original, value: value === 'ctx.kv' ? 'ctx.kv.get()' : value }]);
-        assert.equal(store.state[keys.storage], initial[keys.storage]);
-        assert.equal(store.state[keys.lambdas], initial[keys.lambdas]);
-        const saved = clone(store.state);
-        await updateTutorial();
-        assert.deepEqual(store.state, saved);
         assert.equal(store.writes(), 1);
     });
 });

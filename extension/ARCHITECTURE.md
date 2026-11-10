@@ -84,11 +84,10 @@ Local file pages register their parent origin as `null`, matching file-page `pos
 
 The workspace keeps view state in `workspace.js`. Pane layout, code editing, review rendering and HTML escaping have dedicated modules alongside it; look there before adding another implementation.
 
-Empty resource categories offer an optional docs treasure hunt. `shared/tutorial.js` defines the commands; a workspace-only background action creates them together under the storage mutation queue. Tutorial resources allow only the docs hosts in user world; progress K-V access is restricted to the tutorial project. Creation and dismissal are remembered, and existing names are never overwritten.
+Empty resource categories offer an optional docs treasure hunt. `shared/tutorial.js` defines the commands; a workspace-only background action creates them together under the storage mutation queue. Tutorial resources allow only the docs hosts in user world; progress K-V access is restricted to the tutorial project. Setup appends the examples in one storage write after checking for naming collisions. Creation and dismissal are remembered; existing resources are never updated automatically.
 
 The `treasure hunt` project provides `begin` and `answer`, with one `tutorial-progress` K-V value and three answer secrets. `begin` resets progress and prints the first hint; `answer` reads only the current answer from Secrets before saving progress and printing the next hint. Incorrect or missing answers keep the current challenge; unavailable secrets leave progress unchanged. A separate enabled `deactivate-demo` trigger and helper release the website demo shortcut on the docs hosts.
 
-Opening the workspace upgrades earlier tutorials to version 6, including the first answer’s default of `ctx.kv.get()`. Retired location-hunt records and the previous answer function are archived in `local_storage_key_tutorial_archive`. Existing quiz progress and function policies are preserved when moving answers into Secrets. Other resources remain in place; naming collisions leave existing data unchanged. This migration can be removed once earlier tutorial installations have upgraded.
 
 `usageHelp.js` renders collapsed item help with separate examples and hosted documentation links. Expansion belongs to the pane's view state; examples use static argument hints and never execute function code.
 

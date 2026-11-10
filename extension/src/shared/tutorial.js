@@ -1,8 +1,6 @@
 import { newLambda, newStorageItem, newSecret, newTrigger } from './records.js';
 
 export const TUTORIAL_STATUS_KEY = 'local_storage_key_tutorial_status';
-export const TUTORIAL_VERSION_KEY = 'local_storage_key_tutorial_version';
-export const TUTORIAL_VERSION = 6;
 export const TUTORIAL_PROJECT = 'treasure hunt';
 const urls = ['https://browser-lambdas.dev/*', 'https://www.browser-lambdas.dev/*'];
 
