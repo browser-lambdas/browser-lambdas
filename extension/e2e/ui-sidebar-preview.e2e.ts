@@ -75,17 +75,21 @@ test('navigates every workspace destination and follows browser history', async 
 	await expect(page).toHaveURL(`${base}/settings.html`);
 });
 
-test('logo opens local documentation in a browser tab', async ({ page, extensionId }) => {
+test('home logo opens the hosted website and preserves the workspace', async ({ page, extensionId }) => {
 	await page.goto(`chrome-extension://${extensionId}/workspace.html#functions`);
-	const home = page.getByRole('link', { name: 'Home', exact: true });
-	await expect(home).toHaveAttribute('href', 'file:///Users/jh/dev/browser-lambdas/web/index.html');
-	await page.evaluate(() => {
-		(window as any).__documentationTab = null;
-		chrome.tabs.create = async (options: any) => { (window as any).__documentationTab = options; return {} as any; };
-	});
-	await home.click();
-	expect(await page.evaluate(() => (window as any).__documentationTab)).toEqual({ url: 'file:///Users/jh/dev/browser-lambdas/web/index.html', active: true });
-	await expect(page).toHaveURL(`chrome-extension://${extensionId}/workspace.html#functions`);
+	await page.getByTestId('sidebar-functions-add').click();
+	await page.getByTestId('pane-title').fill('unsaved-draft');
+	await page.context().route('https://browser-lambdas.dev/**', route => route.fulfill({ body: 'Home' }));
+	const popupPromise = page.waitForEvent('popup');
+	await page.getByRole('link', { name: 'Home', exact: true }).click();
+	const popup = await popupPromise;
+	try {
+		await expect(popup).toHaveURL('https://browser-lambdas.dev/');
+		await expect(page.getByTestId('pane-title')).toHaveValue('unsaved-draft');
+	} finally {
+		await popup.close();
+		await page.context().unroute('https://browser-lambdas.dev/**');
+	}
 });
 
 test('hover preserves the editor draft and opens an item from the hovered category', async ({ page, extensionId }) => {

@@ -7,13 +7,14 @@ import { DEFAULT_STYLE_CSS } from './defaultStyle.js';
 import { newLambda as makeLambda, newStorageItem as makeStorage, newSecret as makeSecret, newTrigger as makeTrigger, newStyle as makeStyle } from '../../shared/records.js';
 import * as accessPolicy from '../../shared/accessPolicy.js';
 import { sameStorageRecord } from '../../shared/storageRecords.js';
-import { functionUsageExample } from '../../shared/functionUsage.js';
+import { renderUsageHelp, renderUsageExamples } from './usageHelp.js';
 import { mountProjectSettings, updateProjectSettingsGlobals } from './projectSettings.js';
 import { renderCallerRestrictions, handleCallerRestrictionsEvent } from './callerRestrictions.js';
 import { PROJECT_SETTINGS_KEY, getProjectSettings, normalizeProjectSettings, getProjectCategorySettings } from '../../shared/projectPolicy.js';
 import { settingSource } from '../shared/settingSource.js';
 import { mountTerminalPreview } from '../shared/terminalPreview.js';
 import { effectiveNetworkAccess } from '../../shared/networkPolicy.js';
+import { TUTORIAL_STATUS_KEY } from '../../shared/tutorial.js';
 
 const VALID_TABS = ['functions', 'storage', 'triggers', 'secrets', 'styles', 'activity'];
 const PANE_TYPE_BY_TAB = {
@@ -67,8 +68,12 @@ const state = {
   allowMainWorldFunctions: false,
   allowNetwork: false,
   sidebarRename: null,
-  notice: ''
+  notice: '',
+  tutorialStatus: null,
+  tutorialCreating: false,
+  tutorialError: ''
 };
+
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -432,13 +437,6 @@ function updateEditable(id, field, value) {
   node.pane.changed = true;
 }
 
-function itemUsageExample(type, item) {
-  const key = JSON.stringify(item.key ?? '');
-  return type === 'storage'
-    ? `# get value\nconst value = await ctx.kv.get(${key});\n\n# set value\nawait ctx.kv.set(${key}, "new value");`
-    : `const secret = await ctx.secrets.get(${key});`;
-}
-
 function displayStorageValue(value) {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2) ?? '';
 }
@@ -478,7 +476,7 @@ function renderAccessControls(node) {
     ? '<a href="./settings.html#network-access" target="_blank" rel="noopener">global settings</a>'
     : networkProject.allowNetwork !== true ? projectSettingLink(editable, 'functions', 'allowNetwork') : '';
   return `<section class="access-controls" data-testid="${category}-security"><h3>Security</h3>
-    ${type === 'lambda' ? `<label class="access-select-row" for="network-${node.id}"><span>Network rules:</span><select id="network-${node.id}" data-testid="function-network-access" data-pane-id="${node.id}" data-action="network-access" ${inheritedNetwork ? '' : 'disabled'}><option value="blocked" hidden disabled ${!inheritedNetwork ? 'selected' : ''}>Blocked</option><option value="" ${inheritedNetwork && typeof editable.allowNetwork !== 'boolean' ? 'selected' : ''}>Use project default (${inheritedNetwork ? 'allowed' : 'blocked'})</option><option value="true" ${inheritedNetwork && editable.allowNetwork === true ? 'selected' : ''}>Allow</option><option value="false" ${inheritedNetwork && editable.allowNetwork === false ? 'selected' : ''}>Block</option></select></label><div data-testid="function-network-source">${settingSource({ value: false, controlled: networkSource, warning: networkSource ? `Network rules are disabled in ${networkSource}` : '' })}</div>` : ''}
+    ${type === 'lambda' ? `<label class="access-select-row" for="network-${node.id}"><span>Network rules:</span><select id="network-${node.id}" data-testid="function-network-access" aria-describedby="network-help-${node.id}" data-pane-id="${node.id}" data-action="network-access" ${inheritedNetwork ? '' : 'disabled'}><option value="blocked" hidden disabled ${!inheritedNetwork ? 'selected' : ''}>Blocked</option><option value="" ${inheritedNetwork && typeof editable.allowNetwork !== 'boolean' ? 'selected' : ''}>Use project default (${inheritedNetwork ? 'allowed' : 'blocked'})</option><option value="true" ${inheritedNetwork && editable.allowNetwork === true ? 'selected' : ''}>Allow</option><option value="false" ${inheritedNetwork && editable.allowNetwork === false ? 'selected' : ''}>Block</option></select></label><p class="security-help" id="network-help-${node.id}">Allow this function to redirect or block tab traffic and change headers.</p><div data-testid="function-network-source">${settingSource({ value: false, controlled: networkSource, warning: networkSource ? `Network rules are disabled in ${networkSource}` : '' })}</div>` : ''}
     ${accessToggle(node, type === 'storage' ? 'Enable in user world' : 'Allow execution in user world', 'access-world', policy.allowedWorlds.includes('user_scripts'), 'data-world="user_scripts"', projectPolicy && (!projectPolicy.enabled || !projectPolicy.userWorld))}
     ${projectPolicy && !projectPolicy.userWorld ? settingSource({ value: false, controlled: projectSettingLink(editable, 'functions', 'userWorld') }) : ''}
     ${accessToggle(node, type === 'storage' ? 'Enable in main world' : 'Allow execution in main world', 'access-world', policy.allowedWorlds.includes('main'), 'data-world="main"', !enabled)}
@@ -511,7 +509,7 @@ function renderKeyValueForm(node) {
     <label class="form-field"><span class="form-label-row"><span>Key</span>${isSecret ? copyButton('key', 'key', node.id) : ''}</span><input data-pane-id="${node.id}" data-field="key" value="${escapeHtml(editable.key ?? '')}" data-testid="pane-key" /></label>
     ${isSecret ? `<label class="form-field form-field-fill"><span class="form-label-row"><span>Value</span><span class="form-label-actions">${copyButton('value', 'value', node.id)}<button class="form-reveal" type="button" data-action="toggle-secret-value" data-pane-id="${node.id}" aria-pressed="${!isHidden}">${isHidden ? 'Show' : 'Hide'}</button></span></span><textarea aria-label="Value" rows="8" wrap="off" class="form-textarea secret-value ${isHidden ? 'secret-value-hidden' : ''}" data-pane-id="${node.id}" data-field="value" data-testid="pane-value" spellcheck="false">${escapeHtml(value)}</textarea></label>` : `<div class="form-field form-field-fill expandable-field"><div class="code-shell storage-code-box"><div class="line-numbers" aria-hidden="true">${codeLineNumbers(value)}</div><div class="code-editor-stack"><pre class="code-highlight" aria-hidden="true">${highlightJavaScript(value)}</pre><textarea aria-label="Value" class="code-editor storage-value" data-pane-id="${node.id}" data-field="value" data-testid="pane-value" spellcheck="false">${escapeHtml(value)}</textarea></div></div></div>`}
     ${!isSecret && typeof editable.value !== 'string' ? '<p class="security-help">This value was stored as JSON data. Editing the Value field saves it as text; changing access controls preserves its type.</p>' : ''}
-    <label class="form-field"><span class="form-label-row usage-label">How to use</span><textarea class="form-textarea usage-example" data-usage-for="${node.id}" readonly rows="${isSecret ? 1 : 5}" wrap="off">${escapeHtml(itemUsageExample(type, editable))}</textarea></label>
+    ${renderUsageHelp(node)}
     ${renderAccessControls(node)}
   </div>`;
 }
@@ -574,6 +572,12 @@ function renderSidebar() {
     </div>
     <div class="search-wrap"><input class="search" type="search" value="${escapeHtml(search)}" placeholder="${meta.search}" data-action="search" /></div>
     <div class="item-list">
+      ${!getItems(tab).length && !search && !reviewItems().length && !state.tutorialStatus && !state.notice ? `<div class="tutorial-prompt" aria-busy="${state.tutorialCreating}">
+        <p>Looks like you’re starting from scratch. Want to try the treasure-hunt tutorial?</p>
+        <p class="security-help">You can safely delete it later.</p>
+        ${state.tutorialError ? `<p class="form-error" role="alert">${escapeHtml(state.tutorialError)}</p>` : ''}
+        <div class="tutorial-actions"><button type="button" data-action="create-tutorial" ${state.tutorialCreating ? 'disabled' : ''}>${state.tutorialCreating ? 'Creating…' : 'Yes'}</button><button type="button" data-action="dismiss-tutorial" ${state.tutorialCreating ? 'disabled' : ''}>No</button></div>
+      </div>` : ''}
       ${renderSidebarItems(items, tab)}
     </div>
     <div class="sidebar-resizer" data-action="drag-sidebar" aria-label="Resize sidebar"></div>
@@ -768,7 +772,7 @@ function editorFor(node) {
       ${itemSettingsTitle(node)}
       ${node.pane.error ? `<p class="form-error" role="alert">${escapeHtml(node.pane.error)}</p>` : ''}
       <div class="form-field expandable-field"><div class="code-shell function-code-box"><div class="line-numbers" aria-hidden="true">${codeLineNumbers(editable.func)}</div><div class="code-editor-stack"><pre class="code-highlight" aria-hidden="true">${highlightJavaScript(editable.func)}</pre><textarea id="code-${node.id}" aria-label="Code" class="code-editor" spellcheck="false" data-pane-id="${node.id}" data-field="func" placeholder="Type code here...">${escapeHtml(editable.func)}</textarea></div></div></div>
-      <label class="form-field"><span class="form-label-row usage-label">How to use</span><textarea class="form-textarea usage-example" data-function-usage="${node.id}" readonly rows="5" wrap="off">${escapeHtml(functionUsageExample(editable))}</textarea></label>
+      ${renderUsageHelp(node)}
       ${renderAccessControls(node)}
     </div>`;
   }
@@ -780,6 +784,7 @@ function editorFor(node) {
       ${itemSettingsTitle(node)}
       ${node.pane.error ? `<p class="form-error" role="alert">${escapeHtml(node.pane.error)}</p>` : ''}
       <div class="form-field expandable-field"><div class="code-shell style-code-box"><div class="line-numbers" aria-hidden="true">${codeLineNumbers(editable.css)}</div><div class="code-editor-stack"><pre class="code-highlight" aria-hidden="true">${highlightJavaScript(editable.css)}</pre><textarea aria-label="CSS" class="code-editor" spellcheck="false" data-pane-id="${node.id}" data-field="css" placeholder="Type CSS here...">${escapeHtml(editable.css)}</textarea></div></div></div>
+      ${renderUsageHelp(node)}
       <section class="style-theme-settings" aria-label="Terminal style preview">
         <div class="style-preview-heading"><h3>Preview</h3>${selected ? '<span class="style-current-theme">Current theme</span>' : ''}</div>
         <p class="security-help">Click set theme to enable this globally</p>
@@ -794,6 +799,7 @@ function editorFor(node) {
     ${node.pane.error ? `<p class="form-error" role="alert">${escapeHtml(node.pane.error)}</p>` : ''}
     <label class="form-field"><span class="form-label-row"><span>On these paths:</span>${copyButton('patterns', 'patterns', node.id)}</span><textarea class="form-textarea security-patterns" data-pane-id="${node.id}" data-field="patterns" data-testid="trigger-url-patterns" rows="8" wrap="off" spellcheck="false" placeholder="https://*.example.com/*">${escapeHtml(editable.patterns.join('\n'))}</textarea></label>
     <label class="form-field form-field-fill"><span class="form-label-row"><span>Run these commands:</span>${copyButton('commands', 'commands', node.id)}</span><textarea class="form-textarea" data-pane-id="${node.id}" data-field="commands" data-testid="trigger-commands" rows="8" wrap="off" spellcheck="false">${escapeHtml(editable.commands.join('\n'))}</textarea></label>
+    ${renderUsageHelp(node)}
     ${renderAccessControls(node)}
   </div>`;
 }
@@ -1110,6 +1116,30 @@ app.addEventListener('click', async (event) => {
   const target = event.target.closest('[data-action]');
   if (!target) return;
   const action = target.dataset.action;
+  if (action === 'create-tutorial' || action === 'dismiss-tutorial') {
+    if (!event.isTrusted || state.tutorialCreating) return;
+    state.tutorialError = '';
+    state.tutorialCreating = true;
+    render();
+    try {
+      if (action === 'dismiss-tutorial') {
+        await chrome.storage.local.set({ [TUTORIAL_STATUS_KEY]: 'dismissed' });
+        state.tutorialStatus = 'dismissed';
+      } else {
+        const result = await chrome.runtime.sendMessage({ type: 'WORKSPACE_CREATE_TUTORIAL' });
+        if (!result?.success) throw new Error(result?.error || 'The tutorial could not be created. Try again.');
+        [state.lambdas, state.storageItems, state.secrets, state.triggers] = await Promise.all([getLambdas(), getStorageItems(), getSecrets(), getTriggers()]);
+        state.tutorialStatus = 'created';
+        openItem('lambda', result.start);
+      }
+    } catch (error) {
+      state.tutorialError = error.message || 'The tutorial could not be saved. Try again.';
+    } finally {
+      state.tutorialCreating = false;
+      render();
+    }
+    return;
+  }
   if (action === 'project-settings') {
     try {
       state.projectSettings = await getProjectSettings();
@@ -1298,26 +1328,31 @@ app.addEventListener('input', (event) => {
       }
     }
     if (target.classList.contains('code-editor')) syncLineNumbers(target);
-    if (['name', 'func'].includes(target.dataset.field)) {
+    if (['name', 'func', 'key'].includes(target.dataset.field)) {
       const node = findPane(state.root, target.dataset.paneId);
-      const usage = app.querySelector(`[data-function-usage="${target.dataset.paneId}"]`);
-      if (node?.pane.type === 'lambda' && usage) usage.value = functionUsageExample(node.pane.editable);
+      const usage = app.querySelector(`[data-usage-pane="${target.dataset.paneId}"] .usage-examples`);
+      if (node && usage) usage.innerHTML = renderUsageExamples(node.pane.type, node.pane.editable);
     }
     if (target.dataset.field === 'key') {
       const node = findPane(state.root, target.dataset.paneId);
       if (['secret', 'storage'].includes(node?.pane.type)) {
         const title = app.querySelector(`.pane-title[data-pane-id="${target.dataset.paneId}"]`);
-        const usage = app.querySelector(`[data-usage-for="${target.dataset.paneId}"]`);
         if (title) title.value = target.value;
         const key = app.querySelector(`[data-testid="pane-key"][data-pane-id="${target.dataset.paneId}"]`);
         if (key) key.value = target.value;
-        if (usage) usage.value = itemUsageExample(node.pane.type, node.pane.editable);
       }
     }
   }
 });
 
 app.addEventListener('change', (event) => handleCallerRestrictionsEvent(event, state.root));
+
+app.addEventListener('toggle', (event) => {
+  const details = event.target;
+  if (!details.matches('[data-usage-pane]') || !details.isConnected) return;
+  const node = findPane(state.root, details.dataset.usagePane);
+  if (node) node.pane.usageExpanded = details.open;
+}, true);
 
 app.addEventListener('scroll', (event) => {
   if (!event.target.classList?.contains('code-editor')) return;
@@ -1345,6 +1380,13 @@ window.addEventListener('hashchange', () => {
 
 (async () => {
   state.tab = currentTabFromHash();
+  state.tutorialStatus = (await chrome.storage.local.get(TUTORIAL_STATUS_KEY))[TUTORIAL_STATUS_KEY] ?? null;
+  if (state.tutorialStatus === 'created') {
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'WORKSPACE_UPDATE_TUTORIAL' });
+      if (!result?.success) state.notice = result?.error || 'The tutorial could not be updated. Reload to try again.';
+    } catch { state.notice = 'The tutorial could not be updated. Reload to try again.'; }
+  }
   state.baahPollChanges = await getBaahPollChanges();
   state.baahRequireReview = await getBaahRequireReview();
   syncBaahPolling();
@@ -1374,6 +1416,10 @@ window.addEventListener('hashchange', () => {
 })();
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[TUTORIAL_STATUS_KEY]) {
+    state.tutorialStatus = changes[TUTORIAL_STATUS_KEY].newValue ?? null;
+    render();
+  }
   if (area === 'local' && changes[LOCAL_STORAGE_KEY_SHELL_PROMPT]) {
     state.shellPrompt = normalizeShellPrompt(changes[LOCAL_STORAGE_KEY_SHELL_PROMPT].newValue) ?? '>';
     refreshStylePreviews();

@@ -26,6 +26,8 @@ Triggers control automatic execution and URL matching; functions own execution-w
 
 Trigger commands run in listed order, waiting for each authenticated runtime result before starting the next. A blocked or failed command, failed startup handshake, or disconnected tab stops the remaining commands in that trigger. Long-running functions have no execution timeout.
 
+Triggers run once per loaded document.
+
 `executeLambda.js` resolves and verifies the browser's target document before injection. `invocations.js` owns canonical caller ancestry, document identity, one-use grants, readiness and completion; permissions and the continued availability of a native world's messaging configuration are checked for requests. Native startup has a five-second deadline, while running lambdas have no execution timeout.
 
 After the lambda body returns successfully, the runtime drains tracked `ctx` request promises before reporting completion and releasing its invocation. This includes wrapper promises from tab, network and MAIN operations, so requests started by their response callbacks are also drained. Request failures retain their API-specific behavior; connection loss rejects pending requests. Arbitrary timers and unrelated promises are not tracked.
@@ -78,7 +80,17 @@ Style settings preview the current CSS draft; global Terminal settings browse sa
 
 The in-page menu and shell use extension-origin iframes. `uiSessions.js` issues short-lived, single-use sessions bound to the content-script tab and requested interface; only the matching frame page can claim them. Each frame receives its credentials through extension messaging and accepts a transferred port only after checking its parent origin and private token. No readiness token is broadcast to the website. Both frames then use the shared encrypted channel with separate purposes, and accept only trusted user actions. Failed startup removes the frame; the menu also preserves the browser popup fallback.
 
+Local file pages register their parent origin as `null`, matching file-page `postMessage` events. Parent-window, token, tab and encrypted-channel checks still apply.
+
 The workspace keeps view state in `workspace.js`. Pane layout, code editing, review rendering and HTML escaping have dedicated modules alongside it; look there before adding another implementation.
+
+Empty resource categories offer an optional docs treasure hunt. `shared/tutorial.js` defines the commands; a workspace-only background action creates them together under the storage mutation queue. Tutorial resources allow only the docs hosts in user world; progress K-V access is restricted to the tutorial project. Creation and dismissal are remembered, and existing names are never overwritten.
+
+The `treasure hunt` project provides `begin` and `answer`, with one `tutorial-progress` K-V value and three answer secrets. `begin` resets progress and prints the first hint; `answer` reads only the current answer from Secrets before saving progress and printing the next hint. Incorrect or missing answers keep the current challenge; unavailable secrets leave progress unchanged. A separate enabled `deactivate-demo` trigger and helper release the website demo shortcut on the docs hosts.
+
+Opening the workspace upgrades earlier tutorials to version 6, including the first answer’s default of `ctx.kv.get()`. Retired location-hunt records and the previous answer function are archived in `local_storage_key_tutorial_archive`. Existing quiz progress and function policies are preserved when moving answers into Secrets. Other resources remain in place; naming collisions leave existing data unchanged. This migration can be removed once earlier tutorial installations have upgraded.
+
+`usageHelp.js` renders collapsed item help with separate examples and hosted documentation links. Expansion belongs to the pane's view state; examples use static argument hints and never execute function code.
 
 Project settings save automatically through a trusted workspace message, with serialized saves and conflict checks in `shared/projectPolicy.js`. Failed saves preserve edits and offer Retry. Global safeguards are always ceilings: projects can disable allowed execution or polling and require additional review, but cannot relax global restrictions. Unset project values inherit, and item permissions remain binding.
 

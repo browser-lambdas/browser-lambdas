@@ -40,6 +40,8 @@ The adapter uses the shared argument parser and provides a limited `ctx.args.all
 
 Cmd+K, Ctrl+K and demo buttons open the shared shell UI with website-specific identifiers. The adapter handles dragging, resizing and command output. Unknown commands and execution failures are printed in the demo terminal.
 
+Each demo terminal identifies itself and offers `deactivate`. Deactivation closes the demo and releases its keyboard shortcut, persisting per origin when local storage is available. A demo button explicitly reactivates it. The separate `deactivate-demo` trigger calls a helper that dispatches `browser-lambdas-deactivate-demo` to turn off only the website demo; this event grants no extension capabilities.
+
 Shared shell or parser changes can affect both products. See the [root architecture](../ARCHITECTURE.md) for extension execution and the [extension architecture](../extension/ARCHITECTURE.md) for internal ownership.
 
 ## Verification and hosting

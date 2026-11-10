@@ -63,7 +63,7 @@ jobs:
       - run: bash ./compile.sh
       - name: E2E tests
         if: steps.e2e.outputs.run != 'false'
-        run: npm run test:e2e -- --headless --reaction-time=1000
+        run: npm run test:e2e -- --headless --reaction-time=100
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

@@ -101,6 +101,14 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .search::placeholder { color: var(--muted); }
 .search:focus { border-color: var(--text); }
 
+.tutorial-prompt { padding: 4px 20px 20px; font-size: 13px; line-height: 1.6; }
+.tutorial-prompt p { margin: 0 0 12px; }
+.tutorial-actions { display: flex; gap: 8px; }
+.tutorial-actions button { border: 1px solid var(--line); border-radius: 7px; padding: 6px 16px; background: var(--panel-soft); color: var(--text); }
+.tutorial-actions button:first-child { background: var(--green); color: #160e16; border-color: var(--green); }
+.tutorial-actions button:disabled { opacity: .55; cursor: wait; }
+.tutorial-actions button:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+
 .search::-webkit-search-cancel-button {
   appearance: none;
   -webkit-appearance: none;
@@ -331,7 +339,7 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
   gap: 18px;
   padding: 28px 16px;
 }
-.form-field { display: grid; gap: 8px; color: var(--muted); font-weight: 700; }
+.form-field { display: grid; gap: 8px; color: var(--text); font-weight: 700; }
 .form-field-fill { flex: 1; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
 .form-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-family: var(--font-ui); font-size: 14px; }
 .form-label-actions { display: inline-flex; align-items: center; gap: 8px; }
@@ -352,8 +360,9 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .access-controls legend { margin-bottom: 8px; font-family: var(--font-ui); font-weight: 700; }
 .security-check { display: inline-flex; align-items: center; gap: 7px; color: var(--text); cursor: pointer; }
 .security-check.disabled { color: var(--muted); cursor: not-allowed; opacity: .6; }
-.security-help { font-size: 12px; font-weight: 400; }
-.security-help a { color: #e7fdce; }
+.security-help { color: var(--muted); font-size: 12px; font-weight: 400; }
+.security-help a, .security-help button,
+.form-pane .setting-source a, .form-pane .setting-source button { color: inherit; }
 .form-pane textarea.security-patterns { min-height: 100px; }
 .form-pane input:focus, .form-pane textarea:focus { border-color: var(--line-strong); }
 .form-copy, .form-reveal {
@@ -370,13 +379,16 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .storage-form .form-field-fill textarea { min-height: 0; height: 100%; }
 .secret-value { transition: filter .2s ease; }
 .secret-value-hidden { filter: blur(5px); }
-.usage-label { color: var(--line-strong); }
-.usage-example {
-  min-height: auto !important;
-  resize: none !important;
-  border-color: var(--line-strong) !important;
-  color: var(--line-strong) !important;
-}
+.usage-help { min-width: 0; font-size: 12px; }
+.usage-help > summary { color: var(--muted); cursor: pointer; font-weight: 700; }
+.usage-help[open] > summary { margin-bottom: 14px; }
+.usage-examples { display: grid; gap: 14px; }
+.usage-example { min-width: 0; }
+.usage-example h4 { margin: 0 0 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.usage-example pre { margin: 0; padding: 10px 12px; overflow-x: auto; border-radius: 7px; background: var(--active-line); color: var(--text); font: 12px/1.6 var(--font-code); }
+.usage-example code { font: inherit; }
+.usage-docs { display: inline-block; margin-top: 14px; color: var(--muted); text-underline-offset: 3px; }
+.usage-help :is(summary, a):focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 .pane-footer {
   height: 31px;
   flex: 0 0 31px;
@@ -513,7 +525,7 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .trigger-form .form-field-fill { flex: 0 0 auto; min-height: 140px; }
 .trigger-form .form-field-fill textarea { min-height: 120px; }
 
-.access-toggle-row, .access-select-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text); font-weight: 500; }
+.access-toggle-row, .access-select-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text); font-weight: 700; }
 .access-toggle-row { cursor: pointer; }
 .access-toggle-row.disabled { opacity: .55; cursor: not-allowed; }
 .form-pane .access-switch { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 36px; width: 36px; height: 21px; padding: 0; margin: 0; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--panel-soft); cursor: inherit; }
@@ -521,7 +533,7 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .form-pane .access-switch:checked { background: var(--green); border-color: var(--green); }
 .access-switch:checked::after { transform: translateX(15px); background: #101010; }
 .form-pane .access-switch:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
-.access-select-row select { max-width: 48%; border: 1px solid var(--line); border-radius: 8px; background: var(--active-line); color: var(--text); padding: 8px; font: inherit; }
+.access-select-row select { max-width: 48%; border: 1px solid var(--line); border-radius: 8px; background: var(--active-line); color: var(--text); padding: 8px; font: inherit; font-weight: 400; }
 .access-select-row select:disabled { color: var(--muted); opacity: .55; cursor: not-allowed; }
 .url-allowlist-area.muted { opacity: .45; }
 .url-allowlist-area textarea:disabled { cursor: not-allowed; }
@@ -543,7 +555,7 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .editor-maximized .storage-form .storage-value { min-height: 0; }
 
 .pane-actions [data-testid="pane-settings"][aria-pressed="true"] { color: var(--green); }
-.security-hidden .access-controls { display: none; }
+.security-hidden .access-controls, .security-hidden .usage-help { display: none; }
 .function-form .expandable-field, .storage-form .expandable-field { grid-template-rows: minmax(0, 1fr); }
 .editor-maximized .function-code-box, .editor-maximized .storage-code-box { border: 0; border-radius: 0; }
 

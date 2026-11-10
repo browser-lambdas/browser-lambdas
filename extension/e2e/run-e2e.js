@@ -2,7 +2,7 @@
 import { spawnSync } from 'child_process';
 
 const args = process.argv.slice(2);
-let reactionTime = process.env.REACTION_TIME || '500';
+let reactionTime = process.env.REACTION_TIME || '100';
 let headless = false;
 const idx = args.findIndex(
 	(arg) => arg === '--reaction-time' || arg.startsWith('--reaction-time=')

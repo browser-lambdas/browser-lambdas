@@ -57,3 +57,25 @@ test('shell and menu credentials cannot cross surfaces and every session gets a 
     assert.equal((await request({ type: 'CLAIM_UI_SESSION', surface: 'shell', id: shell.id }, shellFrame)).sessionKey, shell.sessionKey);
     assert.equal((await request({ type: 'CLAIM_UI_SESSION', id: menu.id }, frame(menu.id))).sessionKey, menu.sessionKey);
 });
+
+test('local file origins match postMessage without relaxing tab, surface or one-use checks', async t => {
+    setup(t);
+    const NativeURL = globalThis.URL;
+    globalThis.URL = class extends NativeURL {
+        get origin() { return this.protocol === 'file:' ? 'file://' : super.origin; }
+    };
+    t.after(() => { globalThis.URL = NativeURL; });
+    const local = { ...content, url: 'file:///tmp/browser-lambdas/index.html' };
+    for (const surface of ['shell', 'menu']) {
+        const page = surface === 'shell' ? 'shell.html' : 'popup-menu.html';
+        const session = await request({ type: 'REGISTER_UI_SESSION', surface }, local);
+        const sender = { ...frame(session.id), url: `chrome-extension://extension/${page}#${session.id}` };
+        assert.ok((await request({ type: 'CLAIM_UI_SESSION', surface, id: session.id }, { ...sender, tab: { id: 8 } })).error);
+        assert.ok((await request({ type: 'CLAIM_UI_SESSION', surface: surface === 'shell' ? 'menu' : 'shell', id: session.id }, sender)).error);
+        const claimed = await request({ type: 'CLAIM_UI_SESSION', surface, id: session.id }, sender);
+        assert.equal(claimed.parentOrigin, 'null');
+        assert.equal(claimed.token, session.token);
+        assert.equal(claimed.sessionKey, session.sessionKey);
+        assert.ok((await request({ type: 'CLAIM_UI_SESSION', surface, id: session.id }, sender)).error);
+    }
+});

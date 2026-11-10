@@ -12,7 +12,7 @@ for (const [tab, kind] of [['functions', 'function'], ['storage', 'storage'], ['
 			await expect(page.getByTestId('pane-content').locator('.access-controls')).toBeHidden();
 			await expect(page.getByTestId('pane-content').getByTestId('pane-settings')).toHaveCount(0);
 			await expect(page.locator('.pane-footer').getByTestId('pane-settings')).toBeVisible();
-			if (tab === 'storage') await expect(page.locator('[data-usage-for]')).toBeHidden();
+			if (tab === 'storage') await expect(page.locator('.usage-help')).toBeHidden();
 			await page.getByRole('button', { name: 'Show settings' }).click();
 		}
 		if (tab === 'secrets') await page.getByRole('button', { name: 'Show settings' }).click();
@@ -76,7 +76,7 @@ for (const [tab, editor] of [['functions', '.code-editor'], ['storage', '.storag
 			await expect(page.getByTestId('pane-content').locator('.access-controls')).toBeHidden();
 			await expect(page.getByTestId('pane-content').getByTestId('pane-settings')).toHaveCount(0);
 			await expect(page.locator('.pane-footer').getByTestId('pane-settings')).toBeVisible();
-			if (tab === 'storage') await expect(page.locator('[data-usage-for]')).toBeHidden();
+			if (tab === 'storage') await expect(page.locator('.usage-help')).toBeHidden();
 			await page.getByRole('button', { name: 'Show settings' }).click();
 		}
 		await page.locator(editor).fill('draft before maximize');
@@ -189,10 +189,26 @@ test('function usage updates with code and name edits', async ({ page, extension
 	await page.getByTestId('pane-title').fill('do-something');
 	await page.getByLabel('Code', { exact: true }).fill('const { 0: first, 1: second } = ctx.args.all();');
 	await page.getByTestId('pane-settings').click();
-	const usage = page.locator('[data-function-usage]');
-	await expect(usage).toHaveValue('# invoke in terminal\n> do-something pos1 pos2\n\n# tabs\nawait ctx.tabs.this().run("do-something pos1 pos2");');
+	const help = page.locator('.usage-help');
+	await expect(help).not.toHaveAttribute('open');
+	await help.locator('summary').click();
+	const examples = help.locator('pre');
+	await expect(examples).toHaveText(['> do-something pos1 pos2', 'await ctx.tabs.this().run("do-something pos1 pos2");']);
 	await page.getByTestId('pane-title').fill('renamed');
-	await expect(usage).toHaveValue(/> renamed pos1 pos2/);
+	await expect(examples.first()).toHaveText('> renamed pos1 pos2');
+	await page.getByLabel('Code', { exact: true }).fill('const { 0: first, verbose } = ctx.args.all();');
+	await expect(examples.first()).toHaveText('> renamed pos1 --verbose value');
+	const security = page.getByTestId('function-security');
+	await expect(security.locator('.access-select-row > span').first()).toHaveCSS('font-weight', '700');
+	await expect(security.locator('.security-help').first()).toHaveText('Allow this function to redirect or block tab traffic and change headers.');
+	const helpColor = await security.locator('.security-help').first().evaluate(el => getComputedStyle(el).color);
+	expect(helpColor).toBe('rgb(137, 133, 137)');
+	await expect(security.locator('.security-help a').first()).toHaveCSS('color', helpColor);
+	await page.getByTestId('function-url-allowlist').check();
+	await expect(help).toHaveAttribute('open');
+	await expect(examples.first()).toBeVisible();
+	await help.locator('summary').click();
+	await expect(examples.first()).toBeHidden();
 });
 
 for (const tab of ['triggers', 'secrets']) {
@@ -206,5 +222,26 @@ for (const tab of ['triggers', 'secrets']) {
 			await expect(field).toHaveCSS('white-space', 'pre');
 			expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(210);
 		}
+	});
+}
+
+for (const [tab, anchor] of [['functions', 'category-ctx'], ['storage', 'storage'], ['secrets', 'secrets'], ['triggers', ''], ['styles', '']]) {
+	test(`${tab} usage help is collapsed and shows relevant guidance`, async ({ page, extensionId }) => {
+		await page.goto(`chrome-extension://${extensionId}/workspace.html#${tab}`);
+		await page.getByTestId(`sidebar-${tab}-add`).click();
+		await page.getByRole('button', { name: 'Show settings', exact: true }).click();
+		const help = page.locator('.usage-help');
+		await expect(help).toBeVisible();
+		await expect(help).not.toHaveAttribute('open');
+		const docs = help.getByRole('link', { name: /documentation/ });
+		if (!anchor) {
+			await expect(docs).toHaveCount(0);
+			return;
+		}
+		await expect(docs).toBeHidden();
+		await help.locator('summary').click();
+		await expect(docs).toBeVisible();
+		await expect(docs).toHaveAttribute('href', `https://browser-lambdas.dev/#${anchor}`);
+		await expect(docs).toHaveAttribute('target', '_blank');
 	});
 }

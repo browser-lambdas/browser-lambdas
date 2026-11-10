@@ -214,18 +214,19 @@ Next:
 								<p>The surface of the <code>ctx</code> object looks like this:</p>
 
 								<div class="table-wrap">
-									<table>
+									<table class="ctx-surface">
 										<thead>
 											<tr><th>Feature</th><th>API Examples</th><th>Purpose</th></tr>
 										</thead>
 										<tbody>
-											<tr><td>Arguments</td><td><code>ctx.args.all()</code></td><td>Read command‑line flags passed to a lambda</td></tr>
-											<tr><td>Storage</td><td><code>ctx.kv.get()</code>, <code>ctx.kv.set()</code></td><td>Persist values between lambdas</td></tr>
-											<tr><td>Secrets</td><td><code>ctx.secrets.get()</code></td><td>Access configured secrets</td></tr>
-											<tr><td>Main</td><td><code>ctx.main.get()</code>, <code>ctx.main.call()</code>, <code>ctx.main.run()</code></td><td>Read page globals and run page operations</td></tr>
-											<tr><td>Run</td><td><code>ctx.run("foo bar")</code>, <code>ctx.tabs.this().run()</code></td><td>Execute another lambda on the current page</td></tr>
-											<tr><td>Tabs</td><td><code>ctx.tabs.new()</code>, <code>ctx.tabs.all()</code></td><td>Open, list and control browser tabs</td></tr>
-											<tr><td>Network</td><td><code>ctx.tabs.this().network</code></td><td>Redirect, block and change headers</td></tr>
+											<tr><td>Arguments</td><td><a href="#ctxargsall"><code>ctx.args.all()</code></a></td><td>Read command‑line flags passed to a lambda</td></tr>
+											<tr><td>Storage</td><td><a href="#ctxkvgetkey"><code>ctx.kv.get()</code></a>, <a href="#ctxkvsetkey-value"><code>ctx.kv.set()</code></a></td><td>Persist values between lambdas</td></tr>
+											<tr><td>Secrets</td><td><a href="#ctxsecretsgetkey"><code>ctx.secrets.get()</code></a></td><td>Access configured secrets</td></tr>
+											<tr><td>Main</td><td><a href="#ctxmaingetpath"><code>ctx.main.get()</code></a>, <a href="#ctxmaincallpath-args"><code>ctx.main.call()</code></a>, <a href="#ctxmainruncallback-arg"><code>ctx.main.run()</code></a></td><td>Read page globals and run page operations</td></tr>
+											<tr><td>Run</td><td><a href="#ctxruncmd"><code>ctx.run("foo bar")</code></a>, <a href="#ctxtabsthisruncmd"><code>ctx.tabs.this().run()</code></a></td><td>Execute another lambda on the current page</td></tr>
+											<tr><td>Chain</td><td><a href="#chain"><code>ctx.run()</code></a></td><td>Pass return values between lambdas</td></tr>
+											<tr><td>Tabs</td><td><a href="#ctxtabsnewurl"><code>ctx.tabs.new()</code></a>, <a href="#ctxtabsall"><code>ctx.tabs.all()</code></a>, <a href="#ctxtabsnewrunlambda-args"><code>ctx.tabs.new().run()</code></a>, <a href="#ctxtabsnewfocus"><code>tab.focus()</code></a>, <a href="#ctxtabsnewclose"><code>tab.close()</code></a></td><td>Open, list and control browser tabs</td></tr>
+											<tr><td>Network</td><td><a href="#tabnetworkaddrule"><code>tab.network.add()</code></a>, <a href="#tabnetworklist"><code>tab.network.list()</code></a>, <a href="#tabnetworkclear"><code>tab.network.clear()</code></a>, <a href="#networkruleremove"><code>rule.remove()</code></a></td><td>Redirect, block and change headers</td></tr>
 										</tbody>
 									</table>
 								</div>

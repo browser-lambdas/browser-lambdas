@@ -5,6 +5,7 @@ import { executeLambda } from './executeLambda.js';
 import { runTriggers } from './runTriggers.js';
 import { handleUiSession } from './uiSessions.js';
 import { appendActivityLog, log } from './activityLog.js';
+import { createTutorial, updateTutorial } from './tutorial.js';
 // Track which documents already executed triggers to avoid duplicates per page load
 const triggeredDocs = new Set();
 const SCRIPT_STATUS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -31,6 +32,15 @@ const setScriptStatusCache = async (cache) => {
 export function handleRuntimeMessage(message, sender, sendResponse) {
     const uiSession = handleUiSession(message, sender, sendResponse);
     if (uiSession !== undefined) return uiSession;
+    if (message?.type === 'WORKSPACE_CREATE_TUTORIAL' || message?.type === 'WORKSPACE_UPDATE_TUTORIAL') {
+        if (!isWorkspaceSender(sender)) {
+            sendResponse({ success: false, error: 'The tutorial can only be created in the workspace.' });
+            return false;
+        }
+        const operation = message.type === 'WORKSPACE_CREATE_TUTORIAL' ? createTutorial : updateTutorial;
+        operation().then(sendResponse).catch(error => sendResponse({ success: false, error: error.message || 'The tutorial could not be saved. Try again.' }));
+        return true;
+    }
     if (message?.type === 'WORKSPACE_PROJECT_SETTINGS_UPDATE') {
         if (!isWorkspaceSender(sender)) {
             sendResponse({ success: false, error: 'Project settings can only be changed in the workspace.' });

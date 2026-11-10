@@ -1,7 +1,10 @@
 // Website adapter for the shared extension shell. State lasts for this visit.
 let demoHistory = [];
 let demoBounds;
-const getLambdas = async () => [{ name: 'hello' }, { name: 'vi-nav on' }, { name: 'vi-nav off' }];
+const DEMO_DISABLED_KEY = 'browser-lambdas-demo-disabled';
+let demoDisabled = false;
+try { demoDisabled = localStorage.getItem(DEMO_DISABLED_KEY) === 'true'; } catch {}
+const getLambdas = async () => [{ name: 'hello' }, { name: 'vi-nav on' }, { name: 'vi-nav off' }, { name: 'deactivate' }];
 const getInputHistory = async () => [...demoHistory];
 const setInputHistory = async (history) => { demoHistory = [...history]; };
 const getSelectedShellTheme = async () => null;
@@ -37,6 +40,10 @@ const demoCommands = {
 };
 
 async function executeCommand(command) {
+	if (command.trim() === 'deactivate') {
+		deactivateDemo();
+		return;
+	}
 	const name = command.split(/\s+/, 1)[0];
 	if (!Object.hasOwn(demoCommands, name)) {
 		demoPrint(`Unknown command: ${name}. Try hello or vi-nav on (or clear to clear the terminal).`);
@@ -55,6 +62,14 @@ async function executeCommand(command) {
 	try { await demoCommands[name](ctx, { log: demoPrint, warn: demoPrint }); }
 	catch (error) { demoPrint(`Error: ${error.message}`); }
 }
+
+function deactivateDemo() {
+	demoDisabled = true;
+	try { localStorage.setItem(DEMO_DISABLED_KEY, 'true'); } catch {}
+	removeShell();
+}
+
+window.addEventListener('browser-lambdas-deactivate-demo', deactivateDemo);
 
 let demoOpening = false;
 function enableDemoInteractions(shell) {
@@ -104,20 +119,28 @@ function enableDemoInteractions(shell) {
 }
 
 async function openDemoTerminal() {
-	if (demoOpening) return;
+	if (demoOpening || demoDisabled) return;
 	demoOpening = true;
 	try {
 		await showShell(null);
 		const shell = document.getElementById('browser-lambdas-demo-terminal');
+		if (demoDisabled) { removeShell(); return; }
 		enableDemoInteractions(shell);
 		shell.setAttribute('role', 'region');
 		shell.setAttribute('aria-label', 'Demo terminal');
+		if (!shell.dataset.demoWelcome) {
+			shell.dataset.demoWelcome = 'true';
+			demoPrint('// This is a mock demo terminal.');
+			demoPrint('// If you already installed the extension,');
+			demoPrint('// type "deactivate" to turn this demo off.');
+		}
 		document.getElementById('demo-shell-input').setAttribute('aria-label', 'Demo command');
 		document.getElementById('demo-shell-input').focus();
 	} finally { demoOpening = false; }
 }
 
 window.addEventListener('keydown', (event) => {
+	if (demoDisabled) return;
 	if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
 		event.preventDefault();
 		event.stopImmediatePropagation();
@@ -126,6 +149,10 @@ window.addEventListener('keydown', (event) => {
 }, { capture: true });
 document.addEventListener('DOMContentLoaded', () => {
 	for (const button of document.querySelectorAll('[data-open-demo]')) {
-		button.addEventListener('click', () => void openDemoTerminal());
+		button.addEventListener('click', () => {
+			demoDisabled = false;
+			try { localStorage.removeItem(DEMO_DISABLED_KEY); } catch {}
+			void openDemoTerminal();
+		});
 	}
 });
