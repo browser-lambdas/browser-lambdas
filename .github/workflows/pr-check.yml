@@ -50,7 +50,7 @@ jobs:
             while IFS= read -r -d '' file; do
               case "$file" in
                 *.md|*.MD|extension/LICENSE|cli/LICENSE|extension/publish/*) continue ;;
-                extension/*|cli/*|.github/workflows/pr-check.yml) run=true; break ;;
+                extension/*|cli/*|web/*|.github/workflows/pr-check.yml) run=true; break ;;
               esac
             done < /tmp/pr-changed-files
           fi
@@ -61,6 +61,10 @@ jobs:
       - run: npm run check
       - run: npm run test:unit
       - run: bash ./compile.sh
+      - name: Build website for E2E tests
+        if: steps.e2e.outputs.run != 'false'
+        working-directory: .
+        run: bash web/build.sh
       - name: E2E tests
         if: steps.e2e.outputs.run != 'false'
         run: npm run test:e2e -- --headless --reaction-time=100
