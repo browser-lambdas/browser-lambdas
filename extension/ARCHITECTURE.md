@@ -84,10 +84,9 @@ Local file pages register their parent origin as `null`, matching file-page `pos
 
 The workspace keeps view state in `workspace.js`. Pane layout, code editing, review rendering and HTML escaping have dedicated modules alongside it; look there before adding another implementation.
 
-Empty resource categories offer an optional docs treasure hunt. `shared/tutorial.js` defines the commands; a workspace-only background action creates them together under the storage mutation queue. Tutorial resources allow only the docs hosts in user world; progress K-V access is restricted to the tutorial project. Setup appends the examples in one storage write after checking for naming collisions. Creation and dismissal are remembered; existing resources are never updated automatically.
+Empty resource categories offer an optional docs quiz. `shared/tutorial.js` defines the `Demo Lambdas` project with one `quiz` lambda and one `tutorial-quiz` secret containing JSON text with hints and answers keyed by docs section. A workspace-only background action appends them in one storage write under the mutation queue after checking for naming collisions. Creation and dismissal are remembered; existing resources are never updated automatically.
 
-The `treasure hunt` project provides `begin` and `answer`, with one `tutorial-progress` K-V value and three answer secrets. `begin` resets progress and prints the first hint; `answer` reads only the current answer from Secrets before saving progress and printing the next hint. Incorrect or missing answers keep the current challenge; unavailable secrets leave progress unchanged. A separate enabled `deactivate-demo` trigger and helper release the website demo shortcut on the docs hosts.
-
+Tutorial resources allow only the docs hosts in user world; secret access is restricted to the tutorial project. `quiz me` and `quiz reply <reply>` use the visible docs section without KV or saved progress. The example assumes the secret and docs section exist; failures use normal Terminal error reporting. No helper or trigger disables the website demo.
 
 `usageHelp.js` renders collapsed item help with separate examples and hosted documentation links. Expansion belongs to the pane's view state; examples use static argument hints and never execute function code.
 

@@ -2,7 +2,7 @@ import { tutorialResources, TUTORIAL_STATUS_KEY, TUTORIAL_PROJECT } from '../sha
 import { mutateStorageRecords } from './storageRepository.js';
 
 export function createTutorial() {
-  return mutateStorageRecords(async (storage) => {
+  return mutateStorageRecords(async () => {
     const keys = {
       lambdas: 'local_storage_key_lambdas', secrets: 'local_storage_key_secrets',
       triggers: 'local_storage_key_triggers', styles: 'local_storage_key_shellcss'
@@ -20,15 +20,12 @@ export function createTutorial() {
     if (Object.values(collections).some(items => items.some(item => item.project === TUTORIAL_PROJECT))
       || Object.hasOwn(saved.local_storage_key_project_settings ?? {}, TUTORIAL_PROJECT)
       || collections.lambdas.some(item => tutorial.lambdas.some(example => example.name === item.name))
-      || collections.secrets.some(item => tutorial.secrets.some(example => example.key === item.key))
-      || storage.some(item => tutorial.storage.some(example => example.key === item.key))) {
+      || collections.secrets.some(item => tutorial.secrets.some(example => example.key === item.key))) {
       throw new Error('Tutorial names are already in use. Nothing was changed.');
     }
     await chrome.storage.local.set({
       [keys.lambdas]: JSON.stringify([...collections.lambdas, ...tutorial.lambdas]),
       [keys.secrets]: JSON.stringify([...collections.secrets, ...tutorial.secrets]),
-      [keys.triggers]: JSON.stringify([...collections.triggers, ...tutorial.triggers]),
-      local_storage_key_storage: JSON.stringify([...storage, ...tutorial.storage]),
       [TUTORIAL_STATUS_KEY]: 'created'
     });
     return { changed: false, success: true, start: tutorial.lambdas[0] };
