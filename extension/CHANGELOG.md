@@ -1,3 +1,7 @@
+### 0.7.1
+
+- Update tutorial
+
 ## 0.7.0
 
 - Added simple tutorial quiz
