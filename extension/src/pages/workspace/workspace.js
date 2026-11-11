@@ -501,14 +501,14 @@ function renderKeyValueForm(node) {
   const { type, editable } = node.pane;
   const isSecret = type === 'secret';
   const isHidden = !state.revealedSecretPanes.has(node.id);
-  const value = isSecret ? editable.value : displayStorageValue(editable.value);
+  const value = displayStorageValue(editable.value);
   return `<div class="form-pane ${type}-form">
     ${itemSettingsTitle(node)}
     ${node.pane.error ? `<p class="form-error" role="alert">${escapeHtml(node.pane.error)}</p>` : ''}
     ${node.pane.externalChange ? '<p class="form-error" role="status">This item changed elsewhere. Your draft is preserved. Reopen it from the sidebar to load the latest value.</p>' : ''}
     <label class="form-field"><span class="form-label-row"><span>Key</span>${isSecret ? copyButton('key', 'key', node.id) : ''}</span><input data-pane-id="${node.id}" data-field="key" value="${escapeHtml(editable.key ?? '')}" data-testid="pane-key" /></label>
     ${isSecret ? `<label class="form-field form-field-fill"><span class="form-label-row"><span>Value</span><span class="form-label-actions">${copyButton('value', 'value', node.id)}<button class="form-reveal" type="button" data-action="toggle-secret-value" data-pane-id="${node.id}" aria-pressed="${!isHidden}">${isHidden ? 'Show' : 'Hide'}</button></span></span><textarea aria-label="Value" rows="8" wrap="off" class="form-textarea secret-value ${isHidden ? 'secret-value-hidden' : ''}" data-pane-id="${node.id}" data-field="value" data-testid="pane-value" spellcheck="false">${escapeHtml(value)}</textarea></label>` : `<div class="form-field form-field-fill expandable-field"><div class="code-shell storage-code-box"><div class="line-numbers" aria-hidden="true">${codeLineNumbers(value)}</div><div class="code-editor-stack"><pre class="code-highlight" aria-hidden="true">${highlightJavaScript(value)}</pre><textarea aria-label="Value" class="code-editor storage-value" data-pane-id="${node.id}" data-field="value" data-testid="pane-value" spellcheck="false">${escapeHtml(value)}</textarea></div></div></div>`}
-    ${!isSecret && typeof editable.value !== 'string' ? '<p class="security-help">This value was stored as JSON data. Editing the Value field saves it as text; changing access controls preserves its type.</p>' : ''}
+    ${typeof editable.value !== 'string' ? '<p class="security-help">This value was stored as JSON data. Editing the Value field saves it as text; changing access controls preserves its type.</p>' : ''}
     ${renderUsageHelp(node)}
     ${renderAccessControls(node)}
   </div>`;
@@ -573,7 +573,7 @@ function renderSidebar() {
     <div class="search-wrap"><input class="search" type="search" value="${escapeHtml(search)}" placeholder="${meta.search}" data-action="search" /></div>
     <div class="item-list">
       ${!getItems(tab).length && !search && !reviewItems().length && !state.tutorialStatus && !state.notice ? `<div class="tutorial-prompt" aria-busy="${state.tutorialCreating}">
-        <p>Looks like you’re starting from scratch. Want to try the treasure-hunt tutorial?</p>
+        <p>Looks like you’re starting from scratch. Want scaffold some demo stuff?</p>
         <p class="security-help">You can safely delete it later.</p>
         ${state.tutorialError ? `<p class="form-error" role="alert">${escapeHtml(state.tutorialError)}</p>` : ''}
         <div class="tutorial-actions"><button type="button" data-action="create-tutorial" ${state.tutorialCreating ? 'disabled' : ''}>${state.tutorialCreating ? 'Creating…' : 'Yes'}</button><button type="button" data-action="dismiss-tutorial" ${state.tutorialCreating ? 'disabled' : ''}>No</button></div>
@@ -1210,7 +1210,7 @@ app.addEventListener('click', async (event) => {
     const field = target.dataset.field;
     const raw = node?.pane.editable[field];
     const value = field === 'patterns' || field === 'commands' || field === 'urlPatterns' ? (raw || []).join('\n')
-      : node?.pane.type === 'storage' && field === 'value' ? displayStorageValue(raw) : (raw ?? '');
+      : ['storage', 'secret'].includes(node?.pane.type) && field === 'value' ? displayStorageValue(raw) : (raw ?? '');
     await navigator.clipboard?.writeText(value);
   }
   if (action === 'toggle-editor-size') {
